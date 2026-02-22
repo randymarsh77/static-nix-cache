@@ -1,0 +1,81 @@
+name: Deploy Cache
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Build OpenCache itself with Nix so we have a store path to cache
+      - name: Build flake
+        run: nix build .#default --print-out-paths | tee /tmp/store-paths.txt
+
+      # Start the OpenCache server with github-releases backend
+      - name: Start OpenCache
+        env:
+          STORAGE_BACKEND: github-releases
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPO: ${{ github.event.repository.name }}
+          GITHUB_RELEASE_TAG: nix-cache
+          PORT: 8080
+        run: |
+          node index.js &
+          echo "SERVER_PID=$!" >> "$GITHUB_ENV"
+          sleep 2
+
+      # Push the Nix-built store path to our own cache (dogfooding)
+      - name: Push to cache
+        run: |
+          while IFS= read -r p; do
+            nix copy --to "http://localhost:8080?compression=none" "$p"
+          done < /tmp/store-paths.txt
+
+      - name: Stop OpenCache
+        run: kill "$SERVER_PID"
+
+      # Generate the static site from the cached narinfo files
+      - name: Generate static site
+        env:
+          GITHUB_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPO: ${{ github.event.repository.name }}
+          GITHUB_RELEASE_TAG: nix-cache
+          OUTPUT_DIR: ./site
+        run: npm run generate-static
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
