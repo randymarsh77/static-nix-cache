@@ -21,7 +21,7 @@
             src = ./.;
 
             # Update with: nix build 2>&1 | grep 'got:' | awk '{ print $2 }'
-            npmDepsHash = pkgs.lib.fakeHash;
+            npmDepsHash = "sha256-IQvqsLGwlf+iz3pbfnkAOtbDkFzcSd1ZrMGrXz2kN5Y=";
 
             dontNpmBuild = true;
 
