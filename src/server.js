@@ -3,6 +3,7 @@
 const express = require('express');
 const { createCacheRouter } = require('./routes/cache');
 const { createStorage } = require('./storage');
+const { requestLogger } = require('./middleware/logging');
 const config = require('./config');
 
 /**
@@ -15,6 +16,7 @@ function createApp(overrideConfig) {
   const storage = cfg._storage || createStorage(cfg);
 
   const app = express();
+  app.use(requestLogger());
   app.use('/', createCacheRouter(storage, cfg));
 
   return app;

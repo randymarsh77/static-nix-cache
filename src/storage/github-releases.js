@@ -39,6 +39,7 @@ class GitHubReleasesStorage {
 
     // Try to get existing release by tag
     const getUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/releases/tags/${encodeURIComponent(this.releaseTag)}`;
+    console.log(`[github-releases] Looking up release by tag: ${this.releaseTag}`);
     const getResp = await fetch(getUrl, {
       headers: this._headers(),
     });
@@ -46,8 +47,11 @@ class GitHubReleasesStorage {
     if (getResp.ok) {
       const release = await getResp.json();
       this._releaseId = release.id;
+      console.log(`[github-releases] Found existing release id=${this._releaseId}`);
       return this._releaseId;
     }
+
+    console.log(`[github-releases] Release not found (${getResp.status}), creating new release`);
 
     // Create release if it doesn't exist
     const createUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/releases`;
@@ -65,11 +69,13 @@ class GitHubReleasesStorage {
 
     if (!createResp.ok) {
       const errBody = await createResp.text();
+      console.error(`[github-releases] Failed to create release: ${createResp.status} ${errBody}`);
       throw new Error(`Failed to create GitHub release: ${createResp.status} ${errBody}`);
     }
 
     const release = await createResp.json();
     this._releaseId = release.id;
+    console.log(`[github-releases] Created release id=${this._releaseId}`);
     return this._releaseId;
   }
 
@@ -107,6 +113,7 @@ class GitHubReleasesStorage {
   }
 
   async putNarinfo(hash, content) {
+    console.log(`[github-releases] Storing narinfo ${hash}`);
     await fsp.writeFile(
       path.join(this.localPath, 'narinfo', `${hash}.narinfo`),
       content,
@@ -151,9 +158,12 @@ class GitHubReleasesStorage {
     }
     const body = Buffer.concat(chunks);
 
+    console.log(`[github-releases] Uploading NAR asset ${filename} (${body.length} bytes)`);
+
     // Delete existing asset with the same name if present
     const existing = await this._findAsset(filename);
     if (existing) {
+      console.log(`[github-releases] Deleting existing asset ${filename} (id=${existing.id})`);
       await fetch(
         `https://api.github.com/repos/${this.owner}/${this.repo}/releases/assets/${existing.id}`,
         { method: 'DELETE', headers: this._headers() }
@@ -173,8 +183,11 @@ class GitHubReleasesStorage {
 
     if (!resp.ok) {
       const errBody = await resp.text();
+      console.error(`[github-releases] Failed to upload asset ${filename}: ${resp.status} ${errBody}`);
       throw new Error(`Failed to upload release asset: ${resp.status} ${errBody}`);
     }
+
+    console.log(`[github-releases] Uploaded asset ${filename} successfully`);
   }
 
   /**
