@@ -30,6 +30,7 @@ module.exports = {
     owner: process.env.GITHUB_OWNER || '',
     repo: process.env.GITHUB_REPO || '',
     releaseTag: process.env.GITHUB_RELEASE_TAG || 'nix-cache',
+    pruneRetentionDays: parseInt(process.env.GITHUB_PRUNE_RETENTION_DAYS || '0', 10),
   },
 
   // Signing key: '<keyname>:<base64-encoded-ed25519-private-key>'

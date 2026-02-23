@@ -151,4 +151,96 @@ describe('GitHubReleasesStorage', () => {
     const headers = storage._headers();
     expect(headers.Authorization).toBe('token ghp_testtoken');
   });
+
+  // ── Pruning ───────────────────────────────────────────────────────────────
+
+  test('pruneAssets deletes orphaned assets', async () => {
+    // Write a narinfo referencing only "referenced.nar.xz"
+    const narinfo = 'StorePath: /nix/store/abc-example\nURL: nar/referenced.nar.xz\nNarHash: sha256:abc\nNarSize: 100\n';
+    await storage.putNarinfo('abc', narinfo);
+
+    const now = new Date().toISOString();
+
+    mockFetch
+      // Get release by tag
+      .mockResolvedValueOnce({ ok: true, json: async () => releaseResponse })
+      // List assets (page 1)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          { name: 'referenced.nar.xz', id: 10, created_at: now },
+          { name: 'orphaned.nar.xz', id: 11, created_at: now },
+        ],
+      })
+      // Delete orphaned asset
+      .mockResolvedValueOnce({ ok: true });
+
+    const result = await storage.pruneAssets();
+
+    expect(result.deleted).toEqual(['orphaned.nar.xz']);
+    expect(result.referenced).toEqual(['referenced.nar.xz']);
+    expect(result.kept).toEqual([]);
+
+    // Verify the correct asset was deleted
+    const deleteCall = mockFetch.mock.calls[2];
+    expect(deleteCall[0]).toContain('/releases/assets/11');
+    expect(deleteCall[1].method).toBe('DELETE');
+  });
+
+  test('pruneAssets respects retentionDays', async () => {
+    // No narinfo files → all assets are orphaned
+    const oldDate = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(); // 10 days ago
+    const recentDate = new Date().toISOString();
+
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => releaseResponse })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          { name: 'old-orphan.nar.xz', id: 20, created_at: oldDate },
+          { name: 'recent-orphan.nar.xz', id: 21, created_at: recentDate },
+        ],
+      })
+      // Delete old orphan
+      .mockResolvedValueOnce({ ok: true });
+
+    const result = await storage.pruneAssets({ retentionDays: 7 });
+
+    // Old orphan should be deleted, recent should be kept
+    expect(result.deleted).toEqual(['old-orphan.nar.xz']);
+    expect(result.kept).toEqual(['recent-orphan.nar.xz']);
+    expect(result.referenced).toEqual([]);
+  });
+
+  test('pruneAssets with no orphaned assets deletes nothing', async () => {
+    const narinfo = 'StorePath: /nix/store/abc-example\nURL: nar/only.nar.xz\nNarHash: sha256:abc\nNarSize: 100\n';
+    await storage.putNarinfo('abc', narinfo);
+
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => releaseResponse })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ name: 'only.nar.xz', id: 30, created_at: new Date().toISOString() }],
+      });
+
+    const result = await storage.pruneAssets();
+
+    expect(result.deleted).toEqual([]);
+    expect(result.referenced).toEqual(['only.nar.xz']);
+    expect(result.kept).toEqual([]);
+    // Only 2 fetch calls (get release + list assets), no deletes
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  test('pruneAssets with empty release returns empty results', async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => releaseResponse })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] });
+
+    const result = await storage.pruneAssets();
+
+    expect(result.deleted).toEqual([]);
+    expect(result.referenced).toEqual([]);
+    expect(result.kept).toEqual([]);
+  });
 });

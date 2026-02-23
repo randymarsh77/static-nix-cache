@@ -58,6 +58,7 @@ All options are set via environment variables:
 | `GITHUB_OWNER` | | GitHub repository owner |
 | `GITHUB_REPO` | | GitHub repository name |
 | `GITHUB_RELEASE_TAG` | `nix-cache` | Tag name for the GitHub Release holding NAR files |
+| `GITHUB_PRUNE_RETENTION_DAYS` | `0` | Days to keep orphaned release assets before pruning (0 = immediate) |
 
 ### Generating a signing key pair
 
@@ -150,4 +151,28 @@ npx wrangler pages deploy ./site
 # /etc/nix/nix.conf (or flake.nix extraOptions)
 substituters = https://cache.nixos.org https://my-cache.example.com
 trusted-public-keys = cache.nixos.org-1:... my-cache-1:<base64-public>
+```
+
+### Incremental additions & pruning
+
+The `github-releases` backend stores NAR files as assets on a **single** GitHub
+Release (identified by `GITHUB_RELEASE_TAG`).  New store paths are added
+incrementally – each `nix copy` simply uploads new assets alongside existing
+ones.
+
+Over time, old assets that are no longer referenced by any narinfo file may
+accumulate.  The `pruneAssets()` method (exposed on the storage backend)
+compares the release assets against the local narinfo files and deletes any
+asset that is not referenced.
+
+A configurable **retention period** (`GITHUB_PRUNE_RETENTION_DAYS`) prevents
+recently-uploaded assets from being removed before their narinfo has been
+propagated.  Set it to `0` (the default) to delete orphans immediately, or to a
+positive number to keep them for that many days.
+
+You can invoke pruning programmatically:
+
+```js
+const storage = createStorage(config);
+await storage.pruneAssets({ retentionDays: 7 });
 ```

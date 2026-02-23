@@ -217,6 +217,134 @@ class GitHubReleasesStorage {
   }
 
   /**
+   * List all release assets (paginates through all pages).
+   * @returns {Promise<object[]>}
+   */
+  async _listAllAssets() {
+    const releaseId = await this._getReleaseId();
+    const all = [];
+    let page = 1;
+
+    while (true) {
+      const url = `https://api.github.com/repos/${this.owner}/${this.repo}/releases/${releaseId}/assets?per_page=100&page=${page}`;
+      const resp = await fetch(url, { headers: this._headers() });
+
+      if (!resp.ok) break;
+
+      const assets = await resp.json();
+      if (assets.length === 0) break;
+
+      all.push(...assets);
+      if (assets.length < 100) break;
+      page++;
+    }
+
+    return all;
+  }
+
+  /**
+   * Read all local narinfo files and extract the NAR filenames they reference.
+   * Narinfo files contain a `URL:` field like `nar/<filename>`.
+   * @returns {Promise<Set<string>>}
+   */
+  async _getReferencedNarFilenames() {
+    const narinfoDir = path.join(this.localPath, 'narinfo');
+    const referenced = new Set();
+
+    let entries;
+    try {
+      entries = await fsp.readdir(narinfoDir);
+    } catch {
+      return referenced;
+    }
+
+    for (const entry of entries) {
+      if (!entry.endsWith('.narinfo')) continue;
+      try {
+        const content = await fsp.readFile(path.join(narinfoDir, entry), 'utf8');
+        for (const line of content.split('\n')) {
+          if (line.startsWith('URL:')) {
+            const url = line.slice(4).trim();
+            // URL is typically "nar/<filename>" – extract just the filename
+            const filename = url.startsWith('nar/') ? url.slice(4) : url;
+            if (filename) referenced.add(filename);
+          }
+        }
+      } catch {
+        // skip unreadable files
+      }
+    }
+
+    return referenced;
+  }
+
+  /**
+   * Remove release assets that are not referenced by any local narinfo file.
+   *
+   * When `retentionDays` is greater than 0, only orphaned assets whose
+   * `created_at` timestamp is older than `retentionDays` days ago are deleted.
+   * This avoids removing assets that were just uploaded but whose narinfo
+   * has not yet been written or propagated.
+   *
+   * @param {object} [options]
+   * @param {number} [options.retentionDays=0] - grace period in days before
+   *   an orphaned asset is deleted.  0 means delete immediately.
+   * @returns {Promise<{deleted: string[], kept: string[], referenced: string[]}>}
+   */
+  async pruneAssets({ retentionDays = 0 } = {}) {
+    console.log(`[github-releases] Starting asset pruning (retentionDays=${retentionDays})`);
+
+    const [assets, referenced] = await Promise.all([
+      this._listAllAssets(),
+      this._getReferencedNarFilenames(),
+    ]);
+
+    console.log(`[github-releases] Found ${assets.length} release asset(s), ${referenced.size} referenced NAR filename(s)`);
+
+    const cutoff = retentionDays > 0
+      ? new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000)
+      : null;
+
+    const deleted = [];
+    const kept = [];
+    const referencedNames = [];
+
+    for (const asset of assets) {
+      if (referenced.has(asset.name)) {
+        referencedNames.push(asset.name);
+        continue;
+      }
+
+      // Asset is orphaned – check retention period
+      if (cutoff) {
+        const createdAt = new Date(asset.created_at);
+        if (createdAt >= cutoff) {
+          console.log(`[github-releases] Keeping orphaned asset ${asset.name} (created ${asset.created_at}, within retention window)`);
+          kept.push(asset.name);
+          continue;
+        }
+      }
+
+      console.log(`[github-releases] Deleting orphaned asset ${asset.name} (id=${asset.id})`);
+      const resp = await fetch(
+        `https://api.github.com/repos/${this.owner}/${this.repo}/releases/assets/${asset.id}`,
+        { method: 'DELETE', headers: this._headers() }
+      );
+
+      if (resp.ok) {
+        deleted.push(asset.name);
+      } else {
+        console.error(`[github-releases] Failed to delete asset ${asset.name}: ${resp.status}`);
+        kept.push(asset.name);
+      }
+    }
+
+    console.log(`[github-releases] Pruning complete: ${deleted.length} deleted, ${kept.length} kept (orphaned), ${referencedNames.length} referenced`);
+
+    return { deleted, kept, referenced: referencedNames };
+  }
+
+  /**
    * Return the public download URL for a NAR file on GitHub Releases.
    * This URL does not require authentication.
    * @param {string} filename
