@@ -1,6 +1,10 @@
 {
   description = "OpenCache – self-hosted Nix binary cache server";
 
+  nixConfig = {
+    extra-substituters = [ "https://randymarsh77.github.io/opencache/cache" ];
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
