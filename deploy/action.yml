@@ -79,7 +79,7 @@ runs:
         set -euo pipefail
         OPENCACHE_DIR="${{ github.action_path }}/.."
         cd "$OPENCACHE_DIR"
-        npm ci --ignore-scripts 2>&1 | tail -1
+        npm ci --ignore-scripts --silent
         echo "opencache-dir=$(cd "$OPENCACHE_DIR" && pwd)" >> "$GITHUB_OUTPUT"
 
     - name: Start OpenCache server
@@ -139,7 +139,7 @@ runs:
         while IFS= read -r p; do
           [ -z "$p" ] && continue
           echo "Pushing: $p"
-          nix copy "${copy_args[@]}" --to "http://localhost:${PORT}?compression=${COMPRESSION}" "$p" --no-check-sigs
+          nix copy "${copy_args[@]}" --to "http://localhost:${PORT}?compression=${COMPRESSION}" --no-check-sigs "$p"
         done < "$PATHS_FILE"
 
     - name: Generate static site
