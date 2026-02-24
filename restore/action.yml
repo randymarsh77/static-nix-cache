@@ -1,0 +1,58 @@
+name: 'OpenCache Restore'
+description: 'Restore and aggregate previously saved Nix store paths for deployment'
+
+inputs:
+  pattern:
+    description: 'Artifact name pattern to download (default: opencache-*)'
+    required: false
+    default: 'opencache-*'
+
+outputs:
+  paths-file:
+    description: 'Path to file containing all aggregated store paths'
+    value: ${{ steps.aggregate.outputs.paths-file }}
+  export-dir:
+    description: 'Directory containing the merged nix binary cache export'
+    value: ${{ steps.aggregate.outputs.export-dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: ${{ inputs.pattern }}
+        path: /tmp/opencache-restore
+
+    - name: Aggregate store paths
+      id: aggregate
+      shell: bash
+      run: |
+        set -euo pipefail
+        AGGREGATE_DIR="/tmp/opencache-aggregate"
+        mkdir -p "$AGGREGATE_DIR/nix-cache"
+        : > "$AGGREGATE_DIR/store-paths.txt"
+
+        for dir in /tmp/opencache-restore/*/; do
+          [ -d "$dir" ] || continue
+          echo "Merging: $dir"
+
+          # Append store paths
+          if [ -f "$dir/store-paths.txt" ]; then
+            cat "$dir/store-paths.txt" >> "$AGGREGATE_DIR/store-paths.txt"
+          fi
+
+          # Merge binary cache data (content-addressed, no conflicts)
+          if [ -d "$dir/nix-cache" ]; then
+            cp -rn "$dir/nix-cache/." "$AGGREGATE_DIR/nix-cache/" 2>/dev/null || true
+          fi
+        done
+
+        # Deduplicate store paths
+        sort -u -o "$AGGREGATE_DIR/store-paths.txt" "$AGGREGATE_DIR/store-paths.txt"
+
+        count=$(wc -l < "$AGGREGATE_DIR/store-paths.txt")
+        echo "Restored $count unique store path(s)"
+
+        echo "paths-file=$AGGREGATE_DIR/store-paths.txt" >> "$GITHUB_OUTPUT"
+        echo "export-dir=$AGGREGATE_DIR/nix-cache" >> "$GITHUB_OUTPUT"
