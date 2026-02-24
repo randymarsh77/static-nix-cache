@@ -1,224 +1,37 @@
 # OpenCache
-Nix binary cache
 
-A self-hosted [Nix binary cache](https://nixos.wiki/wiki/Binary_Cache) server built with Node.js.
-Store and serve Nix store paths (NARs + narinfo files) using either local disk, any
-S3-compatible object store (AWS S3, Cloudflare R2, Backblaze B2, MinIO, …), or GitHub Releases.
+**Deploy a Nix binary cache for your project. For free.**
 
-## Features
+OpenCache stores [Nix](https://nixos.org/) build artifacts (NARs) as GitHub Release assets and serves cache metadata via static hosting — giving you a fully functional [binary cache](https://nixos.wiki/wiki/Binary_Cache) at zero cost.
 
-* Full Nix binary cache HTTP API (`/nix-cache-info`, `/:hash.narinfo`, `/nar/:filename`)
-* Local filesystem, S3-compatible, and **GitHub Releases** storage backends
-* **Static site generation** – export your cache as static files deployable to Cloudflare Pages, GitHub Pages, etc.
-* Optional narinfo signing with an ed25519 key pair
-* Optional upload authentication via a shared bearer token
-* Configured entirely through environment variables – easy to deploy on any platform
+## How It Works
 
-## Quick start
+1. **Build** your project with Nix in CI
+2. **Upload** NAR files to a GitHub Release (free binary storage)
+3. **Deploy** narinfo metadata as a static site to GitHub Pages
 
-```bash
-npm install
-npm start          # listens on port 8080 by default
-```
+Your team gets fast, cached builds — no servers or cloud storage bills required.
 
-Point Nix at the cache by adding it as a substituter:
+## Quick Start
 
-```nix
-# /etc/nix/nix.conf
-substituters = https://cache.nixos.org http://localhost:8080
-trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= my-cache-1:<base64-public-key>
-```
-
-Push a store path to the cache with `nix copy`:
-
-```bash
-nix copy --to 'http://localhost:8080?compression=none' /nix/store/<hash>-<name>
-```
-
-## Configuration
-
-All options are set via environment variables:
-
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | `8080` | HTTP port to listen on |
-| `STORE_DIR` | `/nix/store` | Nix store directory |
-| `CACHE_PRIORITY` | `30` | Cache priority (lower = higher priority) |
-| `STORAGE_BACKEND` | `local` | `local`, `s3`, or `github-releases` |
-| `LOCAL_STORAGE_PATH` | `./cache` | Root directory for local storage |
-| `S3_BUCKET` | *(required for s3)* | S3 bucket name |
-| `S3_REGION` | `auto` | S3 region |
-| `S3_ENDPOINT` | *(AWS default)* | Custom endpoint URL (e.g. Cloudflare R2) |
-| `S3_ACCESS_KEY_ID` | | S3 access key ID |
-| `S3_SECRET_ACCESS_KEY` | | S3 secret access key |
-| `S3_FORCE_PATH_STYLE` | `false` | Use path-style S3 URLs |
-| `SIGNING_KEY` | *(disabled)* | Signing key `<keyname>:<base64-ed25519-private>` |
-| `UPLOAD_SECRET` | *(open)* | Bearer token required for PUT requests |
-| `GITHUB_TOKEN` | | GitHub personal access token (for `github-releases` backend) |
-| `GITHUB_OWNER` | | GitHub repository owner |
-| `GITHUB_REPO` | | GitHub repository name |
-| `GITHUB_RELEASE_TAG` | `nix-cache` | Tag name for the GitHub Release holding NAR files |
-| `GITHUB_PRUNE_RETENTION_DAYS` | `0` | Days to keep orphaned release assets before pruning (0 = immediate) |
-
-### Generating a signing key pair
-
-```bash
-nix-store --generate-binary-cache-key my-cache-1 private.pem public.pem
-# Or using openssl + nix key format conversion tooling
-```
-
-### Cloudflare R2 example
-
-```bash
-STORAGE_BACKEND=s3 \
-S3_BUCKET=my-nix-cache \
-S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com \
-S3_ACCESS_KEY_ID=<key-id> \
-S3_SECRET_ACCESS_KEY=<secret> \
-UPLOAD_SECRET=mysecret \
-SIGNING_KEY='my-cache-1:<base64-private>' \
-npm start
-```
-
-## Running tests
-
-```bash
-npm test
-```
-
-## GitHub Releases + Static Site
-
-For projects that want to serve a Nix binary cache cheaply using static hosting
-(Cloudflare Pages, GitHub Pages, etc.) with NAR binaries stored on GitHub Releases:
-
-### How it works
-
-1. **NAR files** are uploaded as GitHub Release assets (free binary hosting)
-2. **narinfo + nix-cache-info** are generated as static files you deploy to any static host
-3. A `_redirects` file (Cloudflare Pages compatible) redirects `/nar/*` requests to GitHub Releases
-
-### Workflow
-
-**Step 1 – Push store paths to OpenCache using the `github-releases` backend:**
-
-```bash
-STORAGE_BACKEND=github-releases \
-GITHUB_TOKEN=ghp_... \
-GITHUB_OWNER=myorg \
-GITHUB_REPO=myproject \
-GITHUB_RELEASE_TAG=nix-cache \
-SIGNING_KEY='my-cache-1:<base64-private>' \
-npm start
-```
-
-Then push paths with `nix copy`:
-
-```bash
-nix copy --to 'http://localhost:8080?compression=none' /nix/store/<hash>-<name>
-```
-
-**Step 2 – Generate the static site:**
-
-```bash
-GITHUB_OWNER=myorg \
-GITHUB_REPO=myproject \
-GITHUB_RELEASE_TAG=nix-cache \
-OUTPUT_DIR=./site \
-npm run generate-static
-```
-
-This produces a directory with:
-
-```
-site/
-  nix-cache-info        # Cache metadata
-  <hash>.narinfo        # One per cached store path
-  _redirects            # Cloudflare Pages: redirects /nar/* → GitHub Releases
-```
-
-**Step 3 – Deploy the static site:**
-
-```bash
-# Cloudflare Pages
-npx wrangler pages deploy ./site
-
-# Or commit to a GitHub Pages branch, Netlify, etc.
-```
-
-**Step 4 – Point Nix at your cache:**
-
-```nix
-# /etc/nix/nix.conf (or flake.nix extraOptions)
-substituters = https://cache.nixos.org https://my-cache.example.com
-trusted-public-keys = cache.nixos.org-1:... my-cache-1:<base64-public>
-```
-
-### Incremental additions & pruning
-
-The `github-releases` backend stores NAR files as assets on a **single** GitHub
-Release (identified by `GITHUB_RELEASE_TAG`).  New store paths are added
-incrementally – each `nix copy` simply uploads new assets alongside existing
-ones.
-
-Over time, old assets that are no longer referenced by any narinfo file may
-accumulate.  The `pruneAssets()` method (exposed on the storage backend)
-compares the release assets against the local narinfo files and deletes any
-asset that is not referenced.
-
-A configurable **retention period** (`GITHUB_PRUNE_RETENTION_DAYS`) prevents
-recently-uploaded assets from being removed before their narinfo has been
-propagated.  Set it to `0` (the default) to delete orphans immediately, or to a
-positive number to keep them for that many days.
-
-You can invoke pruning programmatically:
-
-```js
-const storage = createStorage(config);
-await storage.pruneAssets({ retentionDays: 7 });
-```
-
-## GitHub Actions
-
-OpenCache provides three composable actions for integrating Nix binary caching
-into your CI workflows. They can be used standalone (single build) or together
-to aggregate store paths across a matrix of builds before deploying.
-
-### Standalone (single build)
-
-When you don't need to aggregate across matrix jobs, use the **deploy** action
-directly:
+Add a workflow to your repository:
 
 ```yaml
+# .github/workflows/cache.yml
+name: Deploy Cache
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@main
-
-      - name: Build
-        id: build
-        run: nix build --print-out-paths | tee /tmp/store-paths.txt
-
-      - uses: randymarsh77/OpenCache/deploy@v1
-        with:
-          paths-file: /tmp/store-paths.txt
-          backend: github-releases
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          static: ./site            # optional: generate a static site
-```
-
-### Matrix builds (save → restore → deploy)
-
-Use **save** in each matrix job, **restore** + **deploy** in a final job:
-
-```yaml
-jobs:
-  build:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
@@ -226,73 +39,33 @@ jobs:
       - name: Build
         run: nix build --print-out-paths | tee /tmp/store-paths.txt
 
-      - uses: randymarsh77/OpenCache/save@v1
-        with:
-          paths: |
-            $(cat /tmp/store-paths.txt)
-          name: ${{ matrix.os }}
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: randymarsh77/OpenCache/restore@v1
-        id: restore
-
       - uses: randymarsh77/OpenCache/deploy@v1
         with:
-          paths-file: ${{ steps.restore.outputs.paths-file }}
-          export-dir: ${{ steps.restore.outputs.export-dir }}
-          backend: github-releases
+          paths-file: /tmp/store-paths.txt
           github-token: ${{ secrets.GITHUB_TOKEN }}
           static: ./site
 ```
 
-### Action reference
+Then point Nix at your cache:
 
-#### `save`
+```nix
+# flake.nix
+{
+  nixConfig.extra-substituters = [ "https://<owner>.github.io/<repo>/cache" ];
+}
+```
 
-Exports Nix store paths (including closures) and uploads them as a workflow
-artifact for later retrieval.
+## Documentation
 
-| Input | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `paths` | **yes** | | Newline-separated Nix store paths |
-| `name` | no | `default` | Unique artifact name suffix (e.g. `linux-x86_64`) |
+Full documentation is available at **[randymarsh77.github.io/OpenCache](https://randymarsh77.github.io/OpenCache/)**.
 
-#### `restore`
+- [Getting Started](https://randymarsh77.github.io/OpenCache/docs/getting-started)
+- [Configuration](https://randymarsh77.github.io/OpenCache/docs/configuration)
+- [Static Site Generation](https://randymarsh77.github.io/OpenCache/docs/static-site)
+- [Storage Backends](https://randymarsh77.github.io/OpenCache/docs/storage-backends)
+- [GitHub Actions](https://randymarsh77.github.io/OpenCache/docs/github-actions)
+- [Running the Server](https://randymarsh77.github.io/OpenCache/docs/server)
 
-Downloads all saved artifacts matching a pattern and merges them into a single
-aggregated binary cache.
+## License
 
-| Input | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `pattern` | no | `opencache-*` | Artifact name pattern to download |
-
-| Output | Description |
-|--------|-------------|
-| `paths-file` | Path to file listing all aggregated store paths |
-| `export-dir` | Directory containing the merged nix binary cache |
-
-#### `deploy`
-
-Starts a temporary OpenCache server, pushes store paths to the configured
-backend, and optionally generates a static site.
-
-| Input | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `paths` | ¹ | | Newline-separated store paths (standalone mode) |
-| `paths-file` | ¹ | | File listing store paths (e.g. from `restore`) |
-| `export-dir` | no | | Binary cache export dir (from `restore`). When set, NARs are read from this directory instead of the local nix store. |
-| `backend` | no | `github-releases` | Storage backend |
-| `github-token` | no | | GitHub token (required for `github-releases`) |
-| `github-owner` | no | *current owner* | Repository owner |
-| `github-repo` | no | *current repo* | Repository name |
-| `github-release-tag` | no | `nix-cache` | Release tag for NAR storage |
-| `signing-key` | no | | Nix signing key |
-| `upload-secret` | no | | Bearer token for upload auth |
-| `static` | no | | Output dir for static site generation |
-| `port` | no | `18734` | Temporary server port |
-| `compression` | no | `none` | Compression for `nix copy` |
-
-¹ One of `paths` or `paths-file` is required.
+[ISC](LICENSE)

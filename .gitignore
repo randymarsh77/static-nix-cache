@@ -4,3 +4,7 @@ cache/
 .env
 result
 result-*
+website/build/
+website/.docusaurus/
+website/.cache-loader/
+website/node_modules/

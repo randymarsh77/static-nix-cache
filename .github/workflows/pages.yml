@@ -3,6 +3,8 @@ name: Deploy Cache
 on:
   push:
     branches: [master]
+  pull_request:
+    branches: [master]
   workflow_dispatch:
 
 permissions:
@@ -11,8 +13,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: pages-${{ github.event.pull_request.number || 'production' }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -35,10 +37,12 @@ jobs:
 
       # Build OpenCache itself with Nix so we have a store path to cache
       - name: Build flake
+        if: github.event_name != 'pull_request'
         run: nix build .#default --print-out-paths --accept-flake-config | tee /tmp/store-paths.txt
 
       # Start the OpenCache server with github-releases backend
       - name: Start OpenCache
+        if: github.event_name != 'pull_request'
         env:
           STORAGE_BACKEND: github-releases
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -50,36 +54,65 @@ jobs:
 
       # Push the Nix-built store path to our own cache (dogfooding)
       - name: Push to cache
+        if: github.event_name != 'pull_request'
         run: |
           while IFS= read -r p; do
             nix copy --to "http://localhost:8080?compression=none" "$p"
           done < /tmp/store-paths.txt
 
       - name: Stop OpenCache
+        if: github.event_name != 'pull_request'
         run: kill "$SERVER_PID"
 
       - name: Upload server logs
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: opencache-server-log
           path: /tmp/opencache.log
 
-      # Generate the static site from the cached narinfo files
-      - name: Generate static site
+      # Generate the nix cache static files
+      - name: Generate cache static files
+        if: github.event_name != 'pull_request'
         env:
-          OUTPUT_DIR: ./site
+          OUTPUT_DIR: /tmp/nix-cache-static
         run: npm run generate-static
+
+      # Build the Docusaurus documentation site
+      - name: Build docs site
+        working-directory: website
+        run: |
+          npm ci
+          npm run build
+
+      # Copy nix cache static files into the docs site under /cache
+      - name: Merge cache into docs site
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p website/build/cache
+          cp -r /tmp/nix-cache-static/* website/build/cache/
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: ./site
+          path: ./website/build
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  deploy-preview:
+    if: github.event_name == 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pr-preview-${{ github.event.pull_request.number }}
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
