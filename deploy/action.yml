@@ -94,18 +94,32 @@ runs:
           # automatically, so we just need to ask it to finish and we push from
           # the local store
           echo "Discovering paths from magic-nix-cache at $MNC_ADDR..."
-          RESPONSE=$(curl -sf -X POST "http://${MNC_ADDR}/api/workflow-finish" 2>/dev/null || echo '{}')
-          NUM_NEW=$(echo "$RESPONSE" | grep -o '"num_new_paths":[0-9]*' | grep -o '[0-9]*' || echo "0")
-          echo "magic-nix-cache reported $NUM_NEW new path(s)"
+          if ! RESPONSE=$(curl -sf -X POST "http://${MNC_ADDR}/api/workflow-finish" 2>&1); then
+            echo "::warning::Could not reach magic-nix-cache at $MNC_ADDR: $RESPONSE"
+          else
+            NUM_NEW=$(echo "$RESPONSE" | grep -o '"num_new_paths":[0-9]*' | grep -o '[0-9]*' || echo "unknown")
+            echo "magic-nix-cache reported $NUM_NEW new path(s)"
+          fi
 
-          # Since magic-nix-cache already pushed to GHA cache, we diff the
-          # store ourselves for the paths to push to OpenCache
-          echo "Listing current store paths..."
-          find "$STORE_DIR" -maxdepth 1 -mindepth 1 \
-            -not -name '.links' \
-            -not -name '*.drv' \
-            -not -name '*.chroot' \
-            | sort > "$PATHS_FILE"
+          if [ -n "$SNAPSHOT_PATH" ] && [ -f "$SNAPSHOT_PATH" ]; then
+            # Use snapshot for accurate diffing when available
+            echo "Diffing store against snapshot..."
+            CURRENT_PATHS=$(mktemp)
+            find "$STORE_DIR" -maxdepth 1 -mindepth 1 \
+              -not -name '.links' \
+              -not -name '*.drv' \
+              -not -name '*.chroot' \
+              | sort > "$CURRENT_PATHS"
+            comm -23 "$CURRENT_PATHS" "$SNAPSHOT_PATH" > "$PATHS_FILE"
+            rm -f "$CURRENT_PATHS"
+          else
+            echo "::warning::No store snapshot found; all current store paths will be deployed. Use the setup action for accurate diffing."
+            find "$STORE_DIR" -maxdepth 1 -mindepth 1 \
+              -not -name '.links' \
+              -not -name '*.drv' \
+              -not -name '*.chroot' \
+              | sort > "$PATHS_FILE"
+          fi
         else
           echo "::error::One of 'paths', 'paths-file', 'snapshot-path', or 'magic-nix-cache-addr' is required"
           exit 1
