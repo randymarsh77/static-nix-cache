@@ -1,0 +1,45 @@
+name: 'OpenCache Save'
+description: 'Collect Nix store paths and export binaries for later deployment to OpenCache'
+
+inputs:
+  paths:
+    description: 'Newline-separated Nix store paths to save'
+    required: true
+  name:
+    description: 'Unique name for this set of paths (used as artifact name suffix, e.g. linux-x86_64)'
+    required: false
+    default: 'default'
+
+runs:
+  using: composite
+  steps:
+    - name: Export store paths
+      id: export
+      shell: bash
+      env:
+        STORE_PATHS: ${{ inputs.paths }}
+        ARTIFACT_NAME: ${{ inputs.name }}
+      run: |
+        set -euo pipefail
+        EXPORT_DIR="/tmp/opencache-save/${ARTIFACT_NAME}"
+        mkdir -p "$EXPORT_DIR"
+
+        # Write store paths, filtering empty lines
+        echo "$STORE_PATHS" | sed '/^$/d' > "$EXPORT_DIR/store-paths.txt"
+        count=$(wc -l < "$EXPORT_DIR/store-paths.txt")
+        echo "Exporting $count store path(s)..."
+
+        # Export each path (and its closure) to a local binary cache
+        while IFS= read -r p; do
+          echo "  $p"
+          nix copy --to "file://$EXPORT_DIR/nix-cache" "$p" --no-check-sigs
+        done < "$EXPORT_DIR/store-paths.txt"
+
+        echo "export-dir=$EXPORT_DIR" >> "$GITHUB_OUTPUT"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: opencache-${{ inputs.name }}
+        path: ${{ steps.export.outputs.export-dir }}
+        retention-days: 1

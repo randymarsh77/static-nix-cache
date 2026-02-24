@@ -1,0 +1,172 @@
+name: 'OpenCache Deploy'
+description: 'Deploy Nix store paths to an OpenCache instance'
+
+inputs:
+  paths:
+    description: 'Newline-separated Nix store paths to deploy (standalone mode, without save/restore)'
+    required: false
+  paths-file:
+    description: 'Path to a file containing store paths (e.g. from the restore action)'
+    required: false
+  export-dir:
+    description: 'Path to a nix binary cache export directory (from restore action). When set, paths are copied from this store instead of the local nix store.'
+    required: false
+  backend:
+    description: 'Storage backend: github-releases, s3, or local'
+    required: false
+    default: 'github-releases'
+  github-token:
+    description: 'GitHub token (required for github-releases backend)'
+    required: false
+  github-owner:
+    description: 'GitHub repository owner (defaults to current repository owner)'
+    required: false
+  github-repo:
+    description: 'GitHub repository name (defaults to current repository name)'
+    required: false
+  github-release-tag:
+    description: 'GitHub release tag for NAR storage'
+    required: false
+    default: 'nix-cache'
+  signing-key:
+    description: 'Nix signing key (keyname:base64-ed25519-private)'
+    required: false
+  upload-secret:
+    description: 'Bearer token for upload authentication'
+    required: false
+  static:
+    description: 'Output directory for static site generation (omit to skip)'
+    required: false
+  port:
+    description: 'Port for the temporary OpenCache server'
+    required: false
+    default: '18734'
+  compression:
+    description: 'Compression type for nix copy (none, xz, zstd)'
+    required: false
+    default: 'none'
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve store paths
+      id: prepare
+      shell: bash
+      env:
+        INPUT_PATHS: ${{ inputs.paths }}
+        INPUT_PATHS_FILE: ${{ inputs.paths-file }}
+      run: |
+        set -euo pipefail
+        PATHS_FILE="/tmp/opencache-deploy-paths.txt"
+
+        if [ -n "$INPUT_PATHS_FILE" ] && [ -f "$INPUT_PATHS_FILE" ]; then
+          cp "$INPUT_PATHS_FILE" "$PATHS_FILE"
+        elif [ -n "$INPUT_PATHS" ]; then
+          echo "$INPUT_PATHS" | sed '/^$/d' > "$PATHS_FILE"
+        else
+          echo "::error::Either 'paths' or 'paths-file' input is required"
+          exit 1
+        fi
+
+        count=$(wc -l < "$PATHS_FILE")
+        echo "Will deploy $count store path(s)"
+        echo "paths-file=$PATHS_FILE" >> "$GITHUB_OUTPUT"
+
+    - name: Install OpenCache
+      id: install
+      shell: bash
+      run: |
+        set -euo pipefail
+        OPENCACHE_DIR="${{ github.action_path }}/.."
+        cd "$OPENCACHE_DIR"
+        npm ci --ignore-scripts --silent
+        echo "opencache-dir=$(cd "$OPENCACHE_DIR" && pwd)" >> "$GITHUB_OUTPUT"
+
+    - name: Start OpenCache server
+      id: server
+      shell: bash
+      env:
+        STORAGE_BACKEND: ${{ inputs.backend }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        GITHUB_OWNER: ${{ inputs.github-owner }}
+        GITHUB_REPO: ${{ inputs.github-repo }}
+        GITHUB_RELEASE_TAG: ${{ inputs.github-release-tag }}
+        SIGNING_KEY: ${{ inputs.signing-key }}
+        UPLOAD_SECRET: ${{ inputs.upload-secret }}
+        PORT: ${{ inputs.port }}
+        OPENCACHE_DIR: ${{ steps.install.outputs.opencache-dir }}
+      run: |
+        set -euo pipefail
+
+        # Default owner/repo to current repository if not provided
+        export GITHUB_OWNER="${GITHUB_OWNER:-${{ github.repository_owner }}}"
+        export GITHUB_REPO="${GITHUB_REPO:-${{ github.event.repository.name }}}"
+
+        node "$OPENCACHE_DIR/index.js" > /tmp/opencache-deploy.log 2>&1 &
+        SERVER_PID=$!
+        echo "server-pid=$SERVER_PID" >> "$GITHUB_OUTPUT"
+
+        # Wait for server to be ready
+        for i in $(seq 1 30); do
+          if curl -sf "http://localhost:${PORT}/nix-cache-info" > /dev/null 2>&1; then
+            echo "OpenCache server ready on port $PORT"
+            break
+          fi
+          if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+            echo "::error::OpenCache server exited unexpectedly"
+            cat /tmp/opencache-deploy.log
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Push store paths
+      shell: bash
+      env:
+        EXPORT_DIR: ${{ inputs.export-dir }}
+        PORT: ${{ inputs.port }}
+        COMPRESSION: ${{ inputs.compression }}
+      run: |
+        set -euo pipefail
+        PATHS_FILE="${{ steps.prepare.outputs.paths-file }}"
+
+        copy_args=()
+        if [ -n "$EXPORT_DIR" ] && [ -d "$EXPORT_DIR" ]; then
+          copy_args+=(--from "file://$EXPORT_DIR")
+          echo "Copying from exported binary cache: $EXPORT_DIR"
+        fi
+
+        while IFS= read -r p; do
+          [ -z "$p" ] && continue
+          echo "Pushing: $p"
+          nix copy "${copy_args[@]}" --to "http://localhost:${PORT}?compression=${COMPRESSION}" --no-check-sigs "$p"
+        done < "$PATHS_FILE"
+
+    - name: Generate static site
+      if: inputs.static != ''
+      shell: bash
+      env:
+        GITHUB_OWNER: ${{ inputs.github-owner }}
+        GITHUB_REPO: ${{ inputs.github-repo }}
+        GITHUB_RELEASE_TAG: ${{ inputs.github-release-tag }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        OUTPUT_DIR: ${{ inputs.static }}
+        OPENCACHE_DIR: ${{ steps.install.outputs.opencache-dir }}
+      run: |
+        set -euo pipefail
+        export GITHUB_OWNER="${GITHUB_OWNER:-${{ github.repository_owner }}}"
+        export GITHUB_REPO="${GITHUB_REPO:-${{ github.event.repository.name }}}"
+        node "$OPENCACHE_DIR/generate-static.js"
+
+    - name: Stop OpenCache server
+      if: always()
+      shell: bash
+      run: kill "${{ steps.server.outputs.server-pid }}" 2>/dev/null || true
+
+    - name: Upload server logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: opencache-deploy-log
+        path: /tmp/opencache-deploy.log
+        retention-days: 7
