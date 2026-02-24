@@ -22,7 +22,7 @@ const FeatureList = [
     ),
   },
   {
-    title: 'Static &amp; Portable',
+    title: 'Static & Portable',
     description: (
       <>
         Generate a static site deployable to GitHub Pages, Cloudflare Pages,
