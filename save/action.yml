@@ -9,6 +9,9 @@ inputs:
     description: 'Unique name for this set of paths (used as artifact name suffix, e.g. linux-x86_64)'
     required: false
     default: 'default'
+  signing-key:
+    description: 'Nix signing key (keyname:base64-ed25519-private). If provided, exported binaries will be signed.'
+    required: false
 
 runs:
   using: composite
@@ -36,6 +39,25 @@ runs:
         done < "$EXPORT_DIR/store-paths.txt"
 
         echo "export-dir=$EXPORT_DIR" >> "$GITHUB_OUTPUT"
+
+    - name: Sign exported paths
+      if: inputs.signing-key != ''
+      shell: bash
+      env:
+        SIGNING_KEY: ${{ inputs.signing-key }}
+        EXPORT_DIR: ${{ steps.export.outputs.export-dir }}
+      run: |
+        set -euo pipefail
+        KEY_FILE=$(mktemp)
+        chmod 600 "$KEY_FILE"
+        echo "$SIGNING_KEY" > "$KEY_FILE"
+        trap 'rm -f "$KEY_FILE"' EXIT
+
+        echo "Signing exported store paths..."
+        while IFS= read -r p; do
+          nix store sign --store "file://$EXPORT_DIR/nix-cache" --key-file "$KEY_FILE" --recursive "$p"
+        done < "$EXPORT_DIR/store-paths.txt"
+        echo "Signing complete"
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
