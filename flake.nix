@@ -25,7 +25,7 @@
             src = ./.;
 
             # Update with: nix build 2>&1 | grep 'got:' | awk '{ print $2 }'
-            npmDepsHash = "sha256-IQvqsLGwlf+iz3pbfnkAOtbDkFzcSd1ZrMGrXz2kN5Y=";
+            npmDepsHash = "sha256-sBVsVaV5ywOf4f9ewMNouslaqW8Lmba7Yr/3xW/v6tI=";
 
             dontNpmBuild = true;
 
