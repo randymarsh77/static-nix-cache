@@ -26,6 +26,9 @@ permissions:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
@@ -39,6 +42,13 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           static: ./site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./site
+
+      - uses: actions/deploy-pages@v4
+        id: pages
 ```
 
 This will:
@@ -47,7 +57,7 @@ This will:
 3. Auto-detect new store paths (no need to capture output)
 4. Upload NAR files to a GitHub Release
 5. Generate a static site with narinfo files
-6. Deploy to GitHub Pages (or any static host)
+6. Deploy the static site to GitHub Pages
 
 ## Use the Cache
 

@@ -8,12 +8,15 @@ OpenCache provides composable actions for integrating Nix binary caching into yo
 
 ## Standalone (Single Build)
 
-Use **setup** before your build and **deploy** after. New store paths are auto-detected:
+Use **setup** before your build and **deploy** after. New store paths are auto-detected. Add the GitHub Pages deploy steps to publish the generated static cache site:
 
 ```yaml
 jobs:
   build:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
@@ -27,6 +30,13 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           static: ./site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./site
+
+      - uses: actions/deploy-pages@v4
+        id: pages
 ```
 
 ## Matrix Builds (deploy per-job)
@@ -81,11 +91,21 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
     steps:
       - uses: randymarsh77/OpenCache/deploy@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           static: ./site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./site
+
+      - uses: actions/deploy-pages@v4
+        id: pages
 ```
 
 ## With magic-nix-cache
@@ -108,6 +128,12 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           static: ./site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./site
+
+      - uses: actions/deploy-pages@v4
 ```
 
 ## Matrix with magic-nix-cache (deferred deploy)
@@ -136,11 +162,21 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
     steps:
       - uses: randymarsh77/OpenCache/deploy@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           static: ./site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./site
+
+      - uses: actions/deploy-pages@v4
+        id: pages
 ```
 
 ## Action Reference
