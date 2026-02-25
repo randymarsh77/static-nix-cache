@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Getting Started
 
-OpenCache is a self-hosted [Nix binary cache](https://nixos.wiki/wiki/Binary_Cache) that stores NAR files as GitHub Release assets and serves narinfo metadata via static hosting — giving you a fully functional binary cache at zero cost.
+static-nix-cache is a self-hosted [Nix binary cache](https://nixos.wiki/wiki/Binary_Cache) that stores NAR files as GitHub Release assets and serves narinfo metadata via static hosting — giving you a fully functional binary cache at zero cost.
 
 ## Quick Start
 
@@ -33,12 +33,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
 
-      - uses: randymarsh77/OpenCache/setup@v1
+      - uses: randymarsh77/static-nix-cache/setup@v1
 
       - name: Build
         run: nix build
 
-      - uses: randymarsh77/OpenCache/deploy@v1
+      - uses: randymarsh77/static-nix-cache/deploy@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           static: ./site

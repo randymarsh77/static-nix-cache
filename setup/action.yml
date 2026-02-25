@@ -1,4 +1,4 @@
-name: 'OpenCache Setup'
+name: 'static-nix-cache Setup'
 description: 'Snapshot the current Nix store so that new paths can be auto-detected later by the save or deploy actions'
 
 inputs:
@@ -22,7 +22,7 @@ runs:
         STORE_DIR: ${{ inputs.store-dir }}
       run: |
         set -euo pipefail
-        SNAPSHOT_DIR="/tmp/opencache-setup"
+        SNAPSHOT_DIR="/tmp/static-nix-cache-setup"
         mkdir -p "$SNAPSHOT_DIR"
         SNAPSHOT_PATH="$SNAPSHOT_DIR/store-paths-before.txt"
 

@@ -1,8 +1,8 @@
 {
-  description = "OpenCache – self-hosted Nix binary cache server";
+  description = "static-nix-cache – self-hosted Nix binary cache server";
 
   nixConfig = {
-    extra-substituters = [ "https://randymarsh77.github.io/OpenCache/cache" ];
+    extra-substituters = [ "https://randymarsh77.github.io/static-nix-cache/cache" ];
   };
 
   inputs = {
@@ -19,29 +19,29 @@
       packages = forAllSystems (system:
         let
           pkgs = pkgsFor system;
-          opencache = pkgs.buildNpmPackage {
-            pname = "opencache";
+          staticNixCache = pkgs.buildNpmPackage {
+            pname = "static-nix-cache";
             version = "1.0.0";
             src = ./.;
 
             # Update with: nix build 2>&1 | grep 'got:' | awk '{ print $2 }'
-            npmDepsHash = "sha256-IQvqsLGwlf+iz3pbfnkAOtbDkFzcSd1ZrMGrXz2kN5Y=";
+            npmDepsHash = "sha256-sBVsVaV5ywOf4f9ewMNouslaqW8Lmba7Yr/3xW/v6tI=";
 
             dontNpmBuild = true;
 
             installPhase = ''
               runHook preInstall
 
-              mkdir -p $out/lib/opencache $out/bin
-              cp -r node_modules $out/lib/opencache/
-              cp -r src $out/lib/opencache/
-              cp index.js generate-static.js package.json $out/lib/opencache/
+              mkdir -p $out/lib/static-nix-cache $out/bin
+              cp -r node_modules $out/lib/static-nix-cache/
+              cp -r src $out/lib/static-nix-cache/
+              cp index.js generate-static.js package.json $out/lib/static-nix-cache/
 
-              makeWrapper ${pkgs.nodejs}/bin/node $out/bin/opencache \
-                --add-flags "$out/lib/opencache/index.js"
+              makeWrapper ${pkgs.nodejs}/bin/node $out/bin/static-nix-cache \
+                --add-flags "$out/lib/static-nix-cache/index.js"
 
-              makeWrapper ${pkgs.nodejs}/bin/node $out/bin/opencache-generate-static \
-                --add-flags "$out/lib/opencache/generate-static.js"
+              makeWrapper ${pkgs.nodejs}/bin/node $out/bin/static-nix-cache-generate-static \
+                --add-flags "$out/lib/static-nix-cache/generate-static.js"
 
               runHook postInstall
             '';
@@ -51,13 +51,13 @@
             meta = with pkgs.lib; {
               description = "Self-hosted Nix binary cache server";
               license = licenses.mit;
-              mainProgram = "opencache";
+              mainProgram = "static-nix-cache";
             };
           };
         in
         {
-          default = opencache;
-          opencache = opencache;
+          default = staticNixCache;
+          "static-nix-cache" = staticNixCache;
         }
       );
 
@@ -71,13 +71,13 @@
       );
 
       overlays.default = final: prev: {
-        opencache = self.packages.${final.system}.default;
+        "static-nix-cache" = self.packages.${final.system}.default;
       };
 
-      # Helper for consumers to configure their Nix to use an OpenCache instance.
+      # Helper for consumers to configure their Nix to use a static-nix-cache instance.
       #
       # Example usage in a NixOS flake:
-      #   nix.settings = opencache.lib.substituterConfig {
+      #   nix.settings = inputs."static-nix-cache".lib.substituterConfig {
       #     url = "https://my-cache.pages.dev";
       #     publicKey = "my-cache-1:<base64-public-key>";
       #   };

@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Static Site Generation
 
-OpenCache can export your binary cache as a set of static files suitable for deployment to any static hosting provider (GitHub Pages, Cloudflare Pages, Netlify, etc.).
+static-nix-cache can export your binary cache as a set of static files suitable for deployment to any static hosting provider (GitHub Pages, Cloudflare Pages, Netlify, etc.).
 
 ## How It Works
 
@@ -14,7 +14,7 @@ OpenCache can export your binary cache as a set of static files suitable for dep
 
 ## Generating the Static Site
 
-After pushing store paths to OpenCache with the `github-releases` backend, generate the static files:
+After pushing store paths to static-nix-cache with the `github-releases` backend, generate the static files:
 
 ```bash
 GITHUB_OWNER=myorg \

@@ -62,7 +62,7 @@ class GitHubReleasesStorage {
       body: JSON.stringify({
         tag_name: this.releaseTag,
         name: `Nix Binary Cache (${this.releaseTag})`,
-        body: 'Nix binary cache NAR files managed by OpenCache.',
+        body: 'Nix binary cache NAR files managed by static-nix-cache.',
         draft: false,
         prerelease: false,
       }),
@@ -84,7 +84,7 @@ class GitHubReleasesStorage {
     return {
       Authorization: `token ${this.token}`,
       Accept: 'application/vnd.github.v3+json',
-      'User-Agent': 'OpenCache',
+      'User-Agent': 'static-nix-cache',
       'X-GitHub-Api-Version': '2022-11-28',
     };
   }

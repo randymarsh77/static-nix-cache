@@ -6,7 +6,7 @@ const config = require('./src/config');
 const app = createApp();
 
 app.listen(config.port, () => {
-  console.log(`OpenCache Nix binary cache listening on port ${config.port}`);
+  console.log(`static-nix-cache Nix binary cache listening on port ${config.port}`);
   console.log(`  Storage backend: ${config.storageBackend}`);
   console.log(`  Store dir:       ${config.storeDir}`);
   console.log(`  Priority:        ${config.priority}`);

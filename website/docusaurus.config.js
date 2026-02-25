@@ -3,7 +3,7 @@ import {themes as prismThemes} from 'prism-react-renderer';
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
-  title: 'OpenCache',
+  title: 'static-nix-cache',
   tagline: 'Deploy a Nix binary cache for your project. For free.',
   favicon: 'img/favicon.ico',
 
@@ -12,10 +12,10 @@ const config = {
   },
 
   url: 'https://randymarsh77.github.io',
-  baseUrl: '/OpenCache/',
+  baseUrl: '/static-nix-cache/',
 
   organizationName: 'randymarsh77',
-  projectName: 'OpenCache',
+  projectName: 'static-nix-cache',
 
   onBrokenLinks: 'throw',
 
@@ -33,7 +33,7 @@ const config = {
           path: '../docs',
           sidebarPath: './sidebars.js',
           editUrl:
-            'https://github.com/randymarsh77/OpenCache/edit/master/',
+            'https://github.com/randymarsh77/static-nix-cache/edit/master/',
         },
         blog: false,
         theme: {
@@ -50,7 +50,7 @@ const config = {
         respectPrefersColorScheme: true,
       },
       navbar: {
-        title: 'OpenCache',
+        title: 'static-nix-cache',
         items: [
           {
             type: 'docSidebar',
@@ -59,7 +59,7 @@ const config = {
             label: 'Docs',
           },
           {
-            href: 'https://github.com/randymarsh77/OpenCache',
+            href: 'https://github.com/randymarsh77/static-nix-cache',
             label: 'GitHub',
             position: 'right',
           },
@@ -90,12 +90,12 @@ const config = {
             items: [
               {
                 label: 'GitHub',
-                href: 'https://github.com/randymarsh77/OpenCache',
+                href: 'https://github.com/randymarsh77/static-nix-cache',
               },
             ],
           },
         ],
-        copyright: `Copyright © ${new Date().getFullYear()} OpenCache. Built with Docusaurus.`,
+        copyright: `Copyright © ${new Date().getFullYear()} static-nix-cache. Built with Docusaurus.`,
       },
       prism: {
         theme: prismThemes.github,

@@ -35,20 +35,20 @@ jobs:
 
       - run: npm ci
 
-      # Build OpenCache itself with Nix so we have a store path to cache
+      # Build static-nix-cache itself with Nix so we have a store path to cache
       - name: Build flake
         if: github.event_name != 'pull_request'
         run: nix build .#default --print-out-paths --accept-flake-config | tee /tmp/store-paths.txt
 
-      # Start the OpenCache server with github-releases backend
-      - name: Start OpenCache
+      # Start the static-nix-cache server with github-releases backend
+      - name: Start static-nix-cache
         if: github.event_name != 'pull_request'
         env:
           STORAGE_BACKEND: github-releases
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PORT: 8080
         run: |
-          node index.js > /tmp/opencache.log 2>&1 &
+          node index.js > /tmp/static-nix-cache.log 2>&1 &
           echo "SERVER_PID=$!" >> "$GITHUB_ENV"
           sleep 2
 
@@ -60,7 +60,7 @@ jobs:
             nix copy --to "http://localhost:8080?compression=none" "$p"
           done < /tmp/store-paths.txt
 
-      - name: Stop OpenCache
+      - name: Stop static-nix-cache
         if: github.event_name != 'pull_request'
         run: kill "$SERVER_PID"
 
@@ -68,8 +68,8 @@ jobs:
         if: always() && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: opencache-server-log
-          path: /tmp/opencache.log
+          name: static-nix-cache-server-log
+          path: /tmp/static-nix-cache.log
 
       # Generate the nix cache static files
       - name: Generate cache static files

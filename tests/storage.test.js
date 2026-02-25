@@ -7,7 +7,7 @@ const LocalStorage = require('../src/storage/local');
 const { Readable } = require('stream');
 
 function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'opencache-test-'));
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'static-nix-cache-test-'));
 }
 
 async function streamToBuffer(readable) {

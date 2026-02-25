@@ -12,7 +12,7 @@ global.fetch = mockFetch;
 const GitHubReleasesStorage = require('../src/storage/github-releases');
 
 function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'opencache-gh-test-'));
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'static-nix-cache-gh-test-'));
 }
 
 describe('GitHubReleasesStorage', () => {

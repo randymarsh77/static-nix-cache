@@ -1,5 +1,5 @@
-name: 'OpenCache Deploy'
-description: 'Deploy Nix store paths to an OpenCache instance'
+name: 'static-nix-cache Deploy'
+description: 'Deploy Nix store paths to an static-nix-cache instance'
 
 inputs:
   paths-file:
@@ -11,15 +11,15 @@ inputs:
   snapshot-path:
     description: 'Path to the store snapshot file from the setup action. When the file exists (and paths-file is omitted), new store paths are auto-detected by diffing the nix store.'
     required: false
-    default: '/tmp/opencache-setup/store-paths-before.txt'
+    default: '/tmp/static-nix-cache-setup/store-paths-before.txt'
   store-dir:
     description: 'Path to the Nix store directory (used for auto-detection)'
     required: false
     default: '/nix/store'
   artifact-pattern:
-    description: 'Artifact name pattern for auto-restore (default: opencache-*). Used when no paths-file or snapshot is available.'
+    description: 'Artifact name pattern for auto-restore (default: static-nix-cache-*). Used when no paths-file or snapshot is available.'
     required: false
-    default: 'opencache-*'
+    default: 'static-nix-cache-*'
   backend:
     description: 'Storage backend: github-releases, s3, or local'
     required: false
@@ -47,7 +47,7 @@ inputs:
     description: 'Output directory for static site generation (omit to skip)'
     required: false
   port:
-    description: 'Port for the temporary OpenCache server'
+    description: 'Port for the temporary static-nix-cache server'
     required: false
     default: '18734'
   compression:
@@ -65,7 +65,7 @@ runs:
       uses: actions/download-artifact@v4
       with:
         pattern: ${{ inputs.artifact-pattern }}
-        path: /tmp/opencache-restore
+        path: /tmp/static-nix-cache-restore
 
     - name: Aggregate restored artifacts
       id: aggregate
@@ -73,10 +73,10 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        AGGREGATE_DIR="/tmp/opencache-aggregate"
+        AGGREGATE_DIR="/tmp/static-nix-cache-aggregate"
 
         # Check if any artifacts were actually downloaded
-        if [ ! -d /tmp/opencache-restore ] || [ -z "$(ls -A /tmp/opencache-restore 2>/dev/null)" ]; then
+        if [ ! -d /tmp/static-nix-cache-restore ] || [ -z "$(ls -A /tmp/static-nix-cache-restore 2>/dev/null)" ]; then
           echo "No artifacts found"
           echo "found=false" >> "$GITHUB_OUTPUT"
           exit 0
@@ -85,7 +85,7 @@ runs:
         mkdir -p "$AGGREGATE_DIR/nix-cache"
         : > "$AGGREGATE_DIR/store-paths.txt"
 
-        for dir in /tmp/opencache-restore/*/; do
+        for dir in /tmp/static-nix-cache-restore/*/; do
           [ -d "$dir" ] || continue
           echo "Merging: $dir"
 
@@ -122,7 +122,7 @@ runs:
         RESTORED_PATHS_FILE: ${{ steps.aggregate.outputs.paths-file }}
       run: |
         set -euo pipefail
-        PATHS_FILE="/tmp/opencache-deploy-paths.txt"
+        PATHS_FILE="/tmp/static-nix-cache-deploy-paths.txt"
 
         if [ -n "$INPUT_PATHS_FILE" ] && [ -f "$INPUT_PATHS_FILE" ]; then
           # Explicit paths-file provided
@@ -183,17 +183,17 @@ runs:
         echo "Will deploy $count store path(s)"
         echo "paths-file=$PATHS_FILE" >> "$GITHUB_OUTPUT"
 
-    - name: Install OpenCache
+    - name: Install static-nix-cache
       id: install
       shell: bash
       run: |
         set -euo pipefail
-        OPENCACHE_DIR="${{ github.action_path }}/.."
-        cd "$OPENCACHE_DIR"
+        STATIC_NIX_CACHE_DIR="${{ github.action_path }}/.."
+        cd "$STATIC_NIX_CACHE_DIR"
         npm ci --ignore-scripts --silent
-        echo "opencache-dir=$(cd "$OPENCACHE_DIR" && pwd)" >> "$GITHUB_OUTPUT"
+        echo "static-nix-cache-dir=$(cd "$STATIC_NIX_CACHE_DIR" && pwd)" >> "$GITHUB_OUTPUT"
 
-    - name: Start OpenCache server
+    - name: Start static-nix-cache server
       id: server
       shell: bash
       env:
@@ -205,7 +205,7 @@ runs:
         SIGNING_KEY: ${{ inputs.signing-key }}
         UPLOAD_SECRET: ${{ inputs.upload-secret }}
         PORT: ${{ inputs.port }}
-        OPENCACHE_DIR: ${{ steps.install.outputs.opencache-dir }}
+        STATIC_NIX_CACHE_DIR: ${{ steps.install.outputs.static-nix-cache-dir }}
       run: |
         set -euo pipefail
 
@@ -213,19 +213,19 @@ runs:
         export GITHUB_OWNER="${GITHUB_OWNER:-${{ github.repository_owner }}}"
         export GITHUB_REPO="${GITHUB_REPO:-${{ github.event.repository.name }}}"
 
-        node "$OPENCACHE_DIR/index.js" > /tmp/opencache-deploy.log 2>&1 &
+        node "$STATIC_NIX_CACHE_DIR/index.js" > /tmp/static-nix-cache-deploy.log 2>&1 &
         SERVER_PID=$!
         echo "server-pid=$SERVER_PID" >> "$GITHUB_OUTPUT"
 
         # Wait for server to be ready
         for i in $(seq 1 30); do
           if curl -sf "http://localhost:${PORT}/nix-cache-info" > /dev/null 2>&1; then
-            echo "OpenCache server ready on port $PORT"
+            echo "static-nix-cache server ready on port $PORT"
             break
           fi
           if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-            echo "::error::OpenCache server exited unexpectedly"
-            cat /tmp/opencache-deploy.log
+            echo "::error::static-nix-cache server exited unexpectedly"
+            cat /tmp/static-nix-cache-deploy.log
             exit 1
           fi
           sleep 1
@@ -262,14 +262,14 @@ runs:
         GITHUB_RELEASE_TAG: ${{ inputs.github-release-tag }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
         OUTPUT_DIR: ${{ inputs.static }}
-        OPENCACHE_DIR: ${{ steps.install.outputs.opencache-dir }}
+        STATIC_NIX_CACHE_DIR: ${{ steps.install.outputs.static-nix-cache-dir }}
       run: |
         set -euo pipefail
         export GITHUB_OWNER="${GITHUB_OWNER:-${{ github.repository_owner }}}"
         export GITHUB_REPO="${GITHUB_REPO:-${{ github.event.repository.name }}}"
-        node "$OPENCACHE_DIR/generate-static.js"
+        node "$STATIC_NIX_CACHE_DIR/generate-static.js"
 
-    - name: Stop OpenCache server
+    - name: Stop static-nix-cache server
       if: always()
       shell: bash
       run: kill "${{ steps.server.outputs.server-pid }}" 2>/dev/null || true
@@ -278,6 +278,6 @@ runs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: opencache-deploy-log
-        path: /tmp/opencache-deploy.log
+        name: static-nix-cache-deploy-log
+        path: /tmp/static-nix-cache-deploy.log
         retention-days: 7

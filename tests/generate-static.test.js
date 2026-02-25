@@ -7,7 +7,7 @@ const os = require('os');
 const { generateStaticSite } = require('../src/generate-static');
 
 function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'opencache-static-test-'));
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'static-nix-cache-static-test-'));
 }
 
 describe('generateStaticSite', () => {

@@ -4,7 +4,7 @@ sidebar_position: 4
 
 # Storage Backends
 
-OpenCache supports three storage backends for NAR files.
+static-nix-cache supports three storage backends for NAR files.
 
 ## GitHub Releases (Recommended)
 

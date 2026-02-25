@@ -1,4 +1,4 @@
-name: 'OpenCache Save'
+name: 'static-nix-cache Save'
 description: 'Export new Nix store paths as a workflow artifact for later deployment with the deploy action'
 
 inputs:
@@ -12,7 +12,7 @@ inputs:
   snapshot-path:
     description: 'Path to the store snapshot file from the setup action (used for auto-detection)'
     required: false
-    default: '/tmp/opencache-setup/store-paths-before.txt'
+    default: '/tmp/static-nix-cache-setup/store-paths-before.txt'
   store-dir:
     description: 'Path to the Nix store directory (used for auto-detection)'
     required: false
@@ -30,7 +30,7 @@ runs:
         STORE_DIR: ${{ inputs.store-dir }}
       run: |
         set -euo pipefail
-        EXPORT_DIR="/tmp/opencache-save/${ARTIFACT_NAME}"
+        EXPORT_DIR="/tmp/static-nix-cache-save/${ARTIFACT_NAME}"
         mkdir -p "$EXPORT_DIR"
 
         if [ -f "$SNAPSHOT_PATH" ]; then
@@ -97,6 +97,6 @@ runs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: opencache-${{ inputs.name }}
+        name: static-nix-cache-${{ inputs.name }}
         path: ${{ steps.export.outputs.export-dir }}
         retention-days: 1

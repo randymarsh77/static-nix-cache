@@ -4,7 +4,7 @@ sidebar_position: 2
 
 # Configuration
 
-OpenCache is configured entirely through environment variables.
+static-nix-cache is configured entirely through environment variables.
 
 ## Environment Variables
 
@@ -37,7 +37,7 @@ Signing narinfo files lets Nix verify that cached store paths haven't been tampe
 nix-store --generate-binary-cache-key my-cache-1 private.pem public.pem
 ```
 
-Pass the private key to OpenCache via the `SIGNING_KEY` environment variable:
+Pass the private key to static-nix-cache via the `SIGNING_KEY` environment variable:
 
 ```bash
 SIGNING_KEY="$(cat private.pem)" npm start

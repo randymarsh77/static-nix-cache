@@ -22,7 +22,7 @@ async function main() {
     console.error('  GITHUB_OWNER         GitHub repository owner (required)');
     console.error('  GITHUB_REPO          GitHub repository name (required)');
     console.error('  GITHUB_RELEASE_TAG   Release tag for NAR files (default: nix-cache)');
-    console.error('  LOCAL_STORAGE_PATH   Path to OpenCache local storage (default: ./cache)');
+    console.error('  LOCAL_STORAGE_PATH   Path to static-nix-cache local storage (default: ./cache)');
     console.error('  OUTPUT_DIR           Output directory for static site (default: ./static-cache)');
     console.error('  STORE_DIR            Nix store directory (default: /nix/store)');
     console.error('  CACHE_PRIORITY       Cache priority (default: 30)');

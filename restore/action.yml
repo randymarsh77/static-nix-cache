@@ -1,11 +1,11 @@
-name: 'OpenCache Restore'
+name: 'static-nix-cache Restore'
 description: 'Download and aggregate previously saved Nix store path artifacts for deployment'
 
 inputs:
   pattern:
-    description: 'Artifact name pattern to download (default: opencache-*)'
+    description: 'Artifact name pattern to download (default: static-nix-cache-*)'
     required: false
-    default: 'opencache-*'
+    default: 'static-nix-cache-*'
 
 outputs:
   paths-file:
@@ -22,18 +22,18 @@ runs:
       uses: actions/download-artifact@v4
       with:
         pattern: ${{ inputs.pattern }}
-        path: /tmp/opencache-restore
+        path: /tmp/static-nix-cache-restore
 
     - name: Aggregate store paths
       id: aggregate
       shell: bash
       run: |
         set -euo pipefail
-        AGGREGATE_DIR="/tmp/opencache-aggregate"
+        AGGREGATE_DIR="/tmp/static-nix-cache-aggregate"
         mkdir -p "$AGGREGATE_DIR/nix-cache"
         : > "$AGGREGATE_DIR/store-paths.txt"
 
-        for dir in /tmp/opencache-restore/*/; do
+        for dir in /tmp/static-nix-cache-restore/*/; do
           [ -d "$dir" ] || continue
           echo "Merging: $dir"
 

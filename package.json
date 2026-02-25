@@ -1,5 +1,5 @@
 {
-  "name": "opencache",
+  "name": "static-nix-cache",
   "version": "1.0.0",
   "description": "Nix binary cache",
   "main": "index.js",
@@ -10,16 +10,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/randymarsh77/OpenCache.git"
+    "url": "git+https://github.com/randymarsh77/static-nix-cache.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/randymarsh77/OpenCache/issues"
+    "url": "https://github.com/randymarsh77/static-nix-cache/issues"
   },
-  "homepage": "https://github.com/randymarsh77/OpenCache#readme",
+  "homepage": "https://github.com/randymarsh77/static-nix-cache#readme",
   "dependencies": {
     "@aws-sdk/client-s3": "^3.995.0",
     "express": "^5.2.1",

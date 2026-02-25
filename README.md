@@ -1,8 +1,8 @@
-# OpenCache
+# static-nix-cache
 
 **Deploy a Nix binary cache for your project. For free.**
 
-OpenCache stores [Nix](https://nixos.org/) build artifacts (NARs) as GitHub Release assets and serves cache metadata via static hosting — giving you a fully functional [binary cache](https://nixos.wiki/wiki/Binary_Cache) at zero cost.
+static-nix-cache stores [Nix](https://nixos.org/) build artifacts (NARs) as GitHub Release assets and serves cache metadata via static hosting — giving you a fully functional [binary cache](https://nixos.wiki/wiki/Binary_Cache) at zero cost.
 
 ## How It Works
 
@@ -39,12 +39,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
 
-      - uses: randymarsh77/OpenCache/setup@v1
+      - uses: randymarsh77/static-nix-cache/setup@v1
 
       - name: Build
         run: nix build
 
-      - uses: randymarsh77/OpenCache/deploy@v1
+      - uses: randymarsh77/static-nix-cache/deploy@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           static: ./site
@@ -70,14 +70,14 @@ Then point Nix at your cache:
 
 ## Documentation
 
-Full documentation is available at **[randymarsh77.github.io/OpenCache](https://randymarsh77.github.io/OpenCache/)**.
+Full documentation is available at **[randymarsh77.github.io/static-nix-cache](https://randymarsh77.github.io/static-nix-cache/)**.
 
-- [Getting Started](https://randymarsh77.github.io/OpenCache/docs/getting-started)
-- [Configuration](https://randymarsh77.github.io/OpenCache/docs/configuration)
-- [Static Site Generation](https://randymarsh77.github.io/OpenCache/docs/static-site)
-- [Storage Backends](https://randymarsh77.github.io/OpenCache/docs/storage-backends)
-- [GitHub Actions](https://randymarsh77.github.io/OpenCache/docs/github-actions)
-- [Running the Server](https://randymarsh77.github.io/OpenCache/docs/server)
+- [Getting Started](https://randymarsh77.github.io/static-nix-cache/docs/getting-started)
+- [Configuration](https://randymarsh77.github.io/static-nix-cache/docs/configuration)
+- [Static Site Generation](https://randymarsh77.github.io/static-nix-cache/docs/static-site)
+- [Storage Backends](https://randymarsh77.github.io/static-nix-cache/docs/storage-backends)
+- [GitHub Actions](https://randymarsh77.github.io/static-nix-cache/docs/github-actions)
+- [Running the Server](https://randymarsh77.github.io/static-nix-cache/docs/server)
 
 ## License
 

@@ -4,7 +4,7 @@ sidebar_position: 6
 
 # Running the Server
 
-OpenCache can also run as a standalone HTTP server, implementing the full Nix binary cache API.
+static-nix-cache can also run as a standalone HTTP server, implementing the full Nix binary cache API.
 
 ## Starting the Server
 
