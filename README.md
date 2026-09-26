@@ -16,6 +16,10 @@ Your team gets fast, cached builds — no servers or cloud storage bills require
 
 Add a workflow to your repository:
 
+These examples pin a commit that includes the setup and auto-detection API. The
+older `v1` tag does **not** contain `setup`; keep setup, save, and deploy on the
+same pinned revision. See [action version compatibility](docs/github-actions.md#version-compatibility).
+
 ```yaml
 # .github/workflows/cache.yml
 name: Deploy Cache
@@ -39,12 +43,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
 
-      - uses: randymarsh77/static-nix-cache/setup@v1
+      - uses: randymarsh77/static-nix-cache/setup@7e5e0f2e1ce2e252c5bd173122d069a139edbd51
 
       - name: Build
         run: nix build
 
-      - uses: randymarsh77/static-nix-cache/deploy@v1
+      - uses: randymarsh77/static-nix-cache/deploy@7e5e0f2e1ce2e252c5bd173122d069a139edbd51
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           static: ./site
