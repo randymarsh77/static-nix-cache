@@ -13,15 +13,15 @@ const references = documents.flatMap(document => {
 });
 
 describe('documented action versions', () => {
-  test.each(documents)('%s pins its actions to immutable commits', document => {
+  test.each(documents)('%s uses the supported floating major tag', document => {
     const examples = references.filter(reference => reference.document === document);
     expect(examples.length).toBeGreaterThan(0);
     for (const { revision } of examples) {
-      expect(revision).toMatch(/^[0-9a-f]{40}$/);
+      expect(revision).toBe('v1');
     }
   });
 
-  test('setup, save and deploy examples use one compatible revision', () => {
+  test('setup, save and deploy examples use one major version', () => {
     expect(new Set(references.map(({ revision }) => revision)).size).toBe(1);
     expect(new Set(references.map(({ action }) => action))).toEqual(new Set(['setup', 'save', 'deploy']));
   });
