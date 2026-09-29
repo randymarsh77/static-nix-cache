@@ -16,6 +16,10 @@ Your team gets fast, cached builds — no servers or cloud storage bills require
 
 Add a workflow to your repository:
 
+These examples use `v1`, the floating major tag for the supported setup and
+auto-detection API. Keep setup, save, and deploy on the same major version.
+See [action version compatibility](docs/github-actions.md#version-compatibility).
+
 ```yaml
 # .github/workflows/cache.yml
 name: Deploy Cache

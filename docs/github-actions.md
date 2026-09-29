@@ -6,6 +6,34 @@ sidebar_position: 5
 
 static-nix-cache provides composable actions for integrating Nix binary caching into your CI workflows. Use **setup** + **deploy** for simple builds, or add **save** when you need to defer deployment (e.g. matrix builds with a final aggregation job). Store paths are always auto-detected — no need to manually capture build output.
 
+## Version Compatibility
+
+All examples below use `v1`, a floating major tag tracking the supported
+setup/save/deploy API. It includes `setup/action.yml`, `save/action.yml`, and
+`deploy/action.yml` with the auto-detection API documented here. Keep all three
+actions on the same major version, including across build and deployment jobs.
+Consumers that require immutable dependencies can instead pin all three actions
+to the same verified full commit SHA.
+
+On September 26, 2026, `v1` was updated from
+[`1e75e1bfbe0af3dd4165ea6c1a7f378ce580be21`](https://github.com/randymarsh77/static-nix-cache/tree/1e75e1bfbe0af3dd4165ea6c1a7f378ce580be21)
+to
+[`7e5e0f2e1ce2e252c5bd173122d069a139edbd51`](https://github.com/randymarsh77/static-nix-cache/tree/7e5e0f2e1ce2e252c5bd173122d069a139edbd51)
+to provide this API. The previous target contained only `save`, `restore`, and
+`deploy` actions, not `setup`.
+At that revision, save requires explicit `paths`, and deploy requires `paths`
+or `paths-file`. Deferred deployment requires a separate restore step with its
+`paths-file` and `export-dir` outputs passed to deploy. Restore aggregates saved
+artifacts; it is not a replacement for setup. The old actions use `opencache-*`
+artifact names, while the supported API uses `static-nix-cache-*`. Existing
+workflows written for that older explicit-path API must migrate when using the
+updated `v1`, or pin the previous commit to retain the old behavior.
+
+Install Nix in every job that runs save or deploy, including a separate
+deployment job. Deploy also requires Node.js and npm on `PATH` (the repository
+CI uses Node.js 22). GitHub-hosted Ubuntu runners provide Node.js and npm;
+self-hosted runners must provision them.
+
 ## Standalone (Single Build)
 
 Use **setup** before your build and **deploy** after. New store paths are auto-detected. Add the GitHub Pages deploy steps to publish the generated static cache site:
@@ -95,6 +123,8 @@ jobs:
       name: github-pages
       url: ${{ steps.pages.outputs.page_url }}
     steps:
+      - uses: DeterminateSystems/nix-installer-action@main
+
       - uses: randymarsh77/static-nix-cache/deploy@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -166,6 +196,8 @@ jobs:
       name: github-pages
       url: ${{ steps.pages.outputs.page_url }}
     steps:
+      - uses: DeterminateSystems/nix-installer-action@main
+
       - uses: randymarsh77/static-nix-cache/deploy@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

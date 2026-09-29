@@ -10,6 +10,9 @@ static-nix-cache is a self-hosted [Nix binary cache](https://nixos.wiki/wiki/Bin
 
 The fastest way to set up a cache for your project is with the **setup** + **deploy** GitHub Actions:
 
+Use `v1` for both actions to track the supported major version, including setup
+and automatic path detection; see [version compatibility](github-actions.md#version-compatibility).
+
 ```yaml
 # .github/workflows/cache.yml
 name: Deploy Cache
