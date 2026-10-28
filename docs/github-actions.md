@@ -256,7 +256,7 @@ Pushes store paths to the configured backend and optionally generates a static s
 | `upload-secret` | no | | Bearer token for upload auth |
 | `static` | no | | Output dir for static site generation |
 | `port` | no | `18734` | Temporary server port |
-| `compression` | no | `none` | Compression for `nix copy` |
+| `compression` | no | `xz` | Compression for `nix copy` |
 
 Deploy auto-detects store paths in this priority order:
 1. Explicit `paths-file` input
