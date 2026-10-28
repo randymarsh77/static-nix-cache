@@ -10,6 +10,8 @@ static-nix-cache is configured entirely through environment variables.
 
 | Variable | Default | Description |
 |---|---|---|
+| `HOST` | `0.0.0.0` | Bind address; deploy uses `127.0.0.1` |
+| `UPSTREAM_CACHES` | *(empty)* | Whitespace-separated trusted cache URLs to avoid mirroring |
 | `PORT` | `8080` | HTTP port to listen on |
 | `STORE_DIR` | `/nix/store` | Nix store directory |
 | `CACHE_PRIORITY` | `30` | Cache priority (lower = higher priority) |
@@ -23,10 +25,10 @@ static-nix-cache is configured entirely through environment variables.
 | `S3_FORCE_PATH_STYLE` | `false` | Use path-style S3 URLs |
 | `SIGNING_KEY` | *(disabled)* | Signing key `<keyname>:<base64-ed25519-private>` |
 | `UPLOAD_SECRET` | *(open)* | Bearer token required for PUT requests |
-| `GITHUB_TOKEN` | | GitHub personal access token (for `github-releases` backend) |
+| `GITHUB_TOKEN` | | GitHub token (`GITHUB_TOKEN` works for same-repository releases) |
 | `GITHUB_OWNER` | | GitHub repository owner |
 | `GITHUB_REPO` | | GitHub repository name |
-| `GITHUB_RELEASE_TAG` | `nix-cache` | Tag name for the GitHub Release holding NAR files |
+| `GITHUB_RELEASE_TAG` | `nix-cache` | Base tag for cache releases and numbered overflow shards |
 | `GITHUB_PRUNE_RETENTION_DAYS` | `0` | Days to keep orphaned release assets before pruning (0 = immediate) |
 
 ## Signing Keys
