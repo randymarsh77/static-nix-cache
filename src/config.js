@@ -1,6 +1,7 @@
 'use strict';
 
 module.exports = {
+  host: process.env.HOST || '0.0.0.0',
   port: parseInt(process.env.PORT || '8080', 10),
 
   storeDir: process.env.STORE_DIR || '/nix/store',
@@ -32,6 +33,9 @@ module.exports = {
     releaseTag: process.env.GITHUB_RELEASE_TAG || 'nix-cache',
     pruneRetentionDays: parseInt(process.env.GITHUB_PRUNE_RETENTION_DAYS || '0', 10),
   },
+
+  // Trusted caches whose paths should not be mirrored into this cache.
+  upstreamCaches: (process.env.UPSTREAM_CACHES || '').split(/\s+/).filter(Boolean),
 
   // Signing key: '<keyname>:<base64-encoded-ed25519-private-key>'
   // Generate with: nix-store --generate-binary-cache-key <keyname> private.pem public.pem

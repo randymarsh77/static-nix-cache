@@ -157,3 +157,35 @@ describe('NAR endpoints', () => {
     expect(res.body).toEqual(narData);
   });
 });
+
+describe('trusted upstream cache exclusion', () => {
+  let originalFetch;
+  beforeEach(() => { originalFetch = global.fetch; global.fetch = jest.fn(); });
+  afterEach(() => { global.fetch = originalFetch; });
+
+  test('GET and HEAD report upstream dependencies without storing a copy', async () => {
+    const storage = new MemoryStorage();
+    const app = makeApp({ _storage: storage, upstreamCaches: ['https://cache.nixos.org'] });
+    global.fetch.mockResolvedValue({ ok: true, text: async () => 'URL: nar/dep.nar.xz\n' });
+    await request(app).head('/dependency.narinfo').expect(200);
+    const res = await request(app).get('/dependency.narinfo').expect(200);
+    expect(res.text).toBe('URL: https://cache.nixos.org/nar/dep.nar.xz\n');
+    expect(storage.narinfos.size).toBe(0);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('upstream failure fails closed rather than mirroring its closure', async () => {
+    const app = makeApp({ upstreamCaches: ['https://cache.nixos.org'] });
+    global.fetch.mockResolvedValue({ ok: false, status: 503 });
+    await request(app).get('/dependency.narinfo').expect(500);
+  });
+
+  test('a new local upload supersedes a cached upstream miss', async () => {
+    const app = makeApp({ upstreamCaches: ['https://cache.nixos.org'] });
+    global.fetch.mockResolvedValue({ ok: false, status: 404 });
+    await request(app).get('/custom.narinfo').expect(404);
+    await request(app).put('/custom.narinfo').set('Content-Type', 'text/plain')
+      .send('StorePath: /nix/store/custom\n').expect(200);
+    await request(app).get('/custom.narinfo').expect(200);
+  });
+});

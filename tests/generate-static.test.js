@@ -61,10 +61,10 @@ describe('generateStaticSite', () => {
     expect(result.narinfoCount).toBe(2);
 
     const out1 = await fsp.readFile(path.join(outputDir, 'abc.narinfo'), 'utf8');
-    expect(out1).toBe(narinfo1);
+    expect(out1).toBe(narinfo1.replace('nar/abc.nar.xz', 'https://github.com/testowner/testrepo/releases/download/nix-cache/abc.nar.xz'));
 
     const out2 = await fsp.readFile(path.join(outputDir, 'def.narinfo'), 'utf8');
-    expect(out2).toBe(narinfo2);
+    expect(out2).toBe(narinfo2.replace('nar/def.nar.xz', 'https://github.com/testowner/testrepo/releases/download/nix-cache/def.nar.xz'));
   });
 
   test('generates _redirects file for Cloudflare Pages', async () => {
@@ -123,4 +123,16 @@ describe('generateStaticSite', () => {
     expect(fs.existsSync(path.join(outputDir, 'nix-cache-info'))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, '_redirects'))).toBe(true);
   });
+});
+
+test('preserves sharded URLs and signatures on Pages', async () => {
+  const dir = makeTempDir();
+  try {
+    const content = 'URL: https://github.com/o/r/releases/download/nix-cache-000002/file.nar.xz\nSig: test:signature\n';
+    fs.writeFileSync(path.join(dir, 'abc.narinfo'), content);
+    const outputDir = path.join(dir, 'site');
+    await generateStaticSite({ narinfoDirPath: dir, outputDir, githubOwner: 'o', githubRepo: 'r', githubReleaseTag: 'nix-cache' });
+    expect(fs.readFileSync(path.join(outputDir, 'abc.narinfo'), 'utf8')).toBe(content);
+    expect(fs.existsSync(path.join(outputDir, '.nojekyll'))).toBe(true);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

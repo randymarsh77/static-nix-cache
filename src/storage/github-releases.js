@@ -1,328 +1,273 @@
-'use strict';
+"use strict";
 
 const fs = require('fs');
 const fsp = require('fs/promises');
+const os = require('os');
 const path = require('path');
-const stream = require('stream');
-const { promisify } = require('util');
+const { pipeline } = require('stream/promises');
+const { Readable, Transform } = require('stream');
 
-const pipeline = promisify(stream.pipeline);
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const MAX_ASSET_BYTES = 2 * 1024 ** 3; // GitHub requires strictly less than 2 GiB.
 
-/**
- * GitHub Releases storage backend.
- *
- * NAR files are stored as release assets on a GitHub Release.
- * narinfo files are stored on the local filesystem (for later static export).
- *
- * Layout:
- *   GitHub Release assets:  <filename>        (NAR files)
- *   Local filesystem:       <localPath>/narinfo/<hash>.narinfo
+/** Release shards are append-only and share one metadata index. Use one writer
+ * per repository (GitHub Actions concurrency); serialization here also handles
+ * concurrent requests within that writer. Existing base-tag caches remain valid.
  */
 class GitHubReleasesStorage {
-  constructor({ token, owner, repo, releaseTag, localPath }) {
-    this.token = token;
-    this.owner = owner;
-    this.repo = repo;
-    this.releaseTag = releaseTag;
-    this.localPath = localPath;
-    this._releaseId = null;
-
-    // Ensure local narinfo directory exists
-    fs.mkdirSync(path.join(this.localPath, 'narinfo'), { recursive: true });
-  }
-
-  /**
-   * Get or create the GitHub Release and return its ID.
-   */
-  async _getReleaseId() {
-    if (this._releaseId) return this._releaseId;
-
-    // Try to get existing release by tag
-    const getUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/releases/tags/${encodeURIComponent(this.releaseTag)}`;
-    console.log(`[github-releases] Looking up release by tag: ${this.releaseTag}`);
-    const getResp = await fetch(getUrl, {
-      headers: this._headers(),
-    });
-
-    if (getResp.ok) {
-      const release = await getResp.json();
-      this._releaseId = release.id;
-      console.log(`[github-releases] Found existing release id=${this._releaseId}`);
-      return this._releaseId;
+  constructor({ token, owner, repo, releaseTag, localPath, maxAssets = 900,
+    requestIntervalMs = 4000, writeIntervalMs = 7500,
+    sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) }) {
+    if (!Number.isInteger(maxAssets) || maxAssets < 1 || maxAssets > 1000) {
+      throw new Error('maxAssets must be between 1 and 1000');
     }
-
-    console.log(`[github-releases] Release not found (${getResp.status}), creating new release`);
-
-    // Create release if it doesn't exist
-    const createUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/releases`;
-    const createResp = await fetch(createUrl, {
-      method: 'POST',
-      headers: { ...this._headers(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tag_name: this.releaseTag,
-        name: `Nix Binary Cache (${this.releaseTag})`,
-        body: 'Nix binary cache NAR files managed by static-nix-cache.',
-        draft: false,
-        prerelease: false,
-      }),
-    });
-
-    if (!createResp.ok) {
-      const errBody = await createResp.text();
-      console.error(`[github-releases] Failed to create release: ${createResp.status} ${errBody}`);
-      throw new Error(`Failed to create GitHub release: ${createResp.status} ${errBody}`);
-    }
-
-    const release = await createResp.json();
-    this._releaseId = release.id;
-    console.log(`[github-releases] Created release id=${this._releaseId}`);
-    return this._releaseId;
+    Object.assign(this, { token, owner, repo, releaseTag, localPath, maxAssets,
+      requestIntervalMs, writeIntervalMs, sleep });
+    this._assets = new Map();
+    this._shards = [];
+    this._initializing = null;
+    this._writes = Promise.resolve();
+    this._requests = Promise.resolve();
+    this._lastRequest = 0;
+    this._lastWrite = 0;
+    fs.mkdirSync(path.join(localPath, 'narinfo'), { recursive: true });
   }
 
   _headers() {
     return {
       Authorization: `token ${this.token}`,
-      Accept: 'application/vnd.github.v3+json',
+      Accept: 'application/vnd.github+json',
       'User-Agent': 'static-nix-cache',
       'X-GitHub-Api-Version': '2022-11-28',
     };
   }
 
-  // ── narinfo (local filesystem) ──────────────────────────────────────────────
+  // Serialize and pace API calls. Retry only explicit throttling / server errors;
+  // request factories reopen upload streams for every retry.
+  _request(url, options = {}) {
+    const task = this._requests.then(async () => {
+      for (let attempt = 0; ; attempt++) {
+        const opts = typeof options === 'function' ? options() : options;
+        const write = opts.method && opts.method !== 'GET';
+        const delay = Math.max(this._lastRequest + this.requestIntervalMs - Date.now(),
+          write ? this._lastWrite + this.writeIntervalMs - Date.now() : 0, 0);
+        if (delay) await this.sleep(delay);
+        this._lastRequest = Date.now();
+        if (write) this._lastWrite = Date.now();
+        let resp;
+        try {
+          resp = await fetch(url, opts);
+        } finally {
+          // Also close streams when a mocked/failed fetch never consumes them.
+          if (opts.body instanceof Readable) opts.body.destroy();
+        }
+        const retryAfter = resp.headers?.get('retry-after');
+        const exhausted = resp.headers?.get('x-ratelimit-remaining') === '0';
+        if (attempt >= 4 || !(resp.status === 429 || resp.status >= 500 ||
+          (resp.status === 403 && (retryAfter || exhausted)))) return resp;
+        await resp.body?.cancel();
+        const reset = Number(resp.headers?.get('x-ratelimit-reset')) * 1000;
+        const delayMs = retryAfter ? Number(retryAfter) * 1000 :
+          exhausted && reset > Date.now() ? reset - Date.now() : 1000 * 2 ** attempt;
+        await this.sleep(Math.max(delayMs, 1000));
+      }
+    });
+    this._requests = task.catch(() => {});
+    return task;
+  }
 
-  async _exists(filePath) {
-    try {
-      await fsp.access(filePath);
-      return true;
-    } catch {
-      return false;
+  async _json(url, options = {}) {
+    const resp = await this._request(url, { headers: this._headers(), ...options });
+    if (!resp.ok) throw new Error(`GitHub API ${resp.status}: ${await resp.text()}`);
+    return resp.json();
+  }
+
+  get _api() { return `https://api.github.com/repos/${this.owner}/${this.repo}`; }
+
+  async _pages(url) {
+    const result = [];
+    for (let page = 1; ; page++) {
+      const batch = await this._json(`${url}?per_page=100&page=${page}`);
+      result.push(...batch);
+      if (batch.length < 100) return result;
     }
+  }
+
+  async _init() {
+    if (!this._initializing) this._initializing = (async () => {
+      const releases = await this._pages(`${this._api}/releases`);
+      for (const release of releases) {
+        const suffix = release.tag_name.slice(this.releaseTag.length);
+        if (release.tag_name !== this.releaseTag &&
+          !(release.tag_name.startsWith(this.releaseTag) && /^-\d{6}$/.test(suffix))) continue;
+        if (release.draft) throw new Error(`Cache release ${release.tag_name} is a draft`);
+        const assets = await this._pages(`${this._api}/releases/${release.id}/assets`);
+        const shard = { id: release.id, tag: release.tag_name, count: assets.length };
+        this._shards.push(shard);
+        for (const asset of assets) {
+          if (asset.state && asset.state !== 'uploaded') continue;
+          // A duplicate name can occur after an interrupted legacy upload.
+          if (this._assets.has(asset.name)) throw new Error(`Duplicate cache asset: ${asset.name}`);
+          this._assets.set(asset.name, { ...asset, shard });
+        }
+      }
+      this._shards.sort((a, b) => a.tag.localeCompare(b.tag));
+    })();
+    return this._initializing;
+  }
+
+  async _writableShard() {
+    await this._init();
+    const available = this._shards.find(s => s.count < this.maxAssets);
+    if (available) return available;
+    const last = Math.max(0, ...this._shards.map(s => Number(s.tag.slice(this.releaseTag.length + 1)) || 0));
+    const tag = this._shards.length ? `${this.releaseTag}-${String(last + 1).padStart(6, '0')}` : this.releaseTag;
+    const release = await this._json(`${this._api}/releases`, {
+      method: 'POST',
+      headers: { ...this._headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tag_name: tag, name: `Nix cache (${tag})`,
+        body: 'Managed by static-nix-cache. Do not modify cache assets.',
+        draft: false, prerelease: true, make_latest: 'false' }),
+    });
+    const shard = { id: release.id, tag, count: 0 };
+    this._shards.push(shard);
+    return shard;
+  }
+
+  _serialize(fn) {
+    const task = this._writes.then(fn);
+    this._writes = task.catch(() => {});
+    return task;
+  }
+
+  async _upload(filename, size, bodyFactory, contentType) {
+    if (size >= MAX_ASSET_BYTES) throw new Error(`Asset ${filename} must be under 2 GiB; enable compression or use S3`);
+    await this._init();
+    // Content-addressed assets are immutable. Never delete a working download.
+    if (this._assets.has(filename)) return this._assets.get(filename);
+    const shard = await this._writableShard();
+    const resp = await this._request(
+      `https://uploads.github.com/repos/${this.owner}/${this.repo}/releases/${shard.id}/assets?name=${encodeURIComponent(filename)}`,
+      () => ({ method: 'POST', headers: { ...this._headers(),
+        'Content-Type': contentType, 'Content-Length': String(size) },
+        body: bodyFactory(), duplex: 'half' }));
+    if (!resp.ok) {
+      // A retried POST may conflict after an earlier response was lost. Recover
+      // the completed immutable asset; never delete it to retry an upload.
+      if (resp.status === 422) {
+        const listed = await this._pages(`${this._api}/releases/${shard.id}/assets`);
+        const completed = listed.find(a => a.name === filename && a.state === 'uploaded');
+        shard.count = listed.length;
+        if (completed) {
+          const recovered = { ...completed, shard };
+          this._assets.set(filename, recovered);
+          return recovered;
+        }
+      }
+      throw new Error(`Failed to upload ${filename}: ${resp.status} ${await resp.text()}`);
+    }
+    const asset = { ...await resp.json(), shard };
+    this._assets.set(filename, asset);
+    shard.count++;
+    return asset;
+  }
+
+  async _findAsset(filename) {
+    await this._init();
+    return this._assets.get(filename) || null;
+  }
+
+  async _listAllAssets() {
+    await this._init();
+    return [...this._assets.values()];
   }
 
   async hasNarinfo(hash) {
-    return this._exists(path.join(this.localPath, 'narinfo', `${hash}.narinfo`));
+    return (await this.getNarinfo(hash)) !== null;
   }
 
   async getNarinfo(hash) {
-    const filePath = path.join(this.localPath, 'narinfo', `${hash}.narinfo`);
-    try {
-      return await fsp.readFile(filePath, 'utf8');
-    } catch {
-      return null;
-    }
+    const file = path.join(this.localPath, 'narinfo', `${hash}.narinfo`);
+    try { return await fsp.readFile(file, 'utf8'); }
+    catch (err) { if (err.code !== 'ENOENT') throw err; }
+    const asset = await this._findAsset(`${hash}.narinfo`);
+    if (!asset) return null;
+    const resp = await this._request(asset.url, {
+      headers: { ...this._headers(), Accept: 'application/octet-stream' }, redirect: 'follow',
+    });
+    if (!resp.ok) throw new Error(`Cannot download metadata ${asset.name}: ${resp.status}`);
+    const content = await resp.text();
+    // Upgrade legacy relative URLs using the complete cross-shard NAR index.
+    const rewritten = await this._absoluteNarUrl(content);
+    await fsp.writeFile(file, rewritten);
+    return rewritten;
+  }
+
+  async _absoluteNarUrl(content) {
+    const match = content.match(/^URL: nar\/(.+)$/m);
+    if (!match) return content;
+    const asset = await this._findAsset(match[1].trim());
+    if (!asset) throw new Error(`Missing NAR asset: ${match[1]}`);
+    return content.replace(match[0], `URL: ${this.narDownloadUrl(asset.name)}`);
   }
 
   async putNarinfo(hash, content) {
-    console.log(`[github-releases] Storing narinfo ${hash}`);
-    // Write locally for immediate use by the server and static site generation
-    await fsp.writeFile(
-      path.join(this.localPath, 'narinfo', `${hash}.narinfo`),
-      content,
-      'utf8'
-    );
-
-    // Also persist to GitHub Releases so other jobs (e.g. matrix builds) and
-    // future static site generations can discover all narinfo across runs.
-    const filename = `${hash}.narinfo`;
-    const releaseId = await this._getReleaseId();
-    const body = Buffer.from(content, 'utf8');
-
-    // Delete existing asset with the same name if present
-    const existing = await this._findAsset(filename);
-    if (existing) {
-      await fetch(
-        `https://api.github.com/repos/${this.owner}/${this.repo}/releases/assets/${existing.id}`,
-        { method: 'DELETE', headers: this._headers() }
-      );
-    }
-
-    const uploadUrl = `https://uploads.github.com/repos/${this.owner}/${this.repo}/releases/${releaseId}/assets?name=${encodeURIComponent(filename)}`;
-    const resp = await fetch(uploadUrl, {
-      method: 'POST',
-      headers: {
-        ...this._headers(),
-        'Content-Type': 'text/plain',
-        'Content-Length': String(body.length),
-      },
-      body,
+    return this._serialize(async () => {
+      const filename = `${hash}.narinfo`;
+      if (await this._findAsset(filename)) {
+        await this.getNarinfo(hash);
+        return;
+      }
+      // Nix signatures cover store path, NAR hash/size and references, not URL.
+      const rewritten = await this._absoluteNarUrl(content);
+      const body = Buffer.from(rewritten);
+      await this._upload(filename, body.length, () => body, 'text/plain');
+      // Only expose metadata after its durable upload succeeds.
+      await fsp.writeFile(path.join(this.localPath, 'narinfo', filename), rewritten);
     });
-
-    if (!resp.ok) {
-      const errBody = await resp.text();
-      console.warn(`[github-releases] Warning: failed to upload narinfo asset ${filename}: ${resp.status} ${errBody}`);
-    }
   }
 
-  /**
-   * Download all `.narinfo` release assets into the local narinfo directory.
-   *
-   * This ensures the local narinfo directory is a complete superset of all
-   * narinfo ever pushed to the release (across matrix jobs, previous runs, etc.).
-   * Called before static site generation so the generated site is complete.
-   *
-   * @returns {Promise<number>} number of narinfo files fetched from the release
-   */
   async fetchAllNarinfo() {
-    console.log('[github-releases] Fetching all narinfo from release...');
     const assets = await this._listAllAssets();
-    const narinfoAssets = assets.filter(a => a.name.endsWith('.narinfo'));
-    const narinfoDir = path.join(this.localPath, 'narinfo');
     let fetched = 0;
-
-    for (const asset of narinfoAssets) {
-      const localFile = path.join(narinfoDir, asset.name);
-      // Skip if we already have this file locally (just written by this job)
-      if (await this._exists(localFile)) continue;
-
-      const resp = await fetch(asset.url, {
-        headers: {
-          ...this._headers(),
-          Accept: 'application/octet-stream',
-        },
-        redirect: 'follow',
-      });
-
-      if (!resp.ok) {
-        console.warn(`[github-releases] Warning: could not download narinfo asset ${asset.name}: ${resp.status}`);
-        continue;
-      }
-
-      const content = await resp.text();
-      await fsp.writeFile(localFile, content, 'utf8');
+    for (const asset of assets) {
+      if (!asset.name.endsWith('.narinfo')) continue;
+      await this.getNarinfo(asset.name.slice(0, -8));
       fetched++;
     }
-
-    console.log(`[github-releases] Fetched ${fetched} narinfo file(s) from release (${narinfoAssets.length} total on release)`);
     return fetched;
   }
 
-  // ── NAR files (GitHub Release assets) ───────────────────────────────────────
-
-  async hasNar(filename) {
-    const asset = await this._findAsset(filename);
-    return asset !== null;
-  }
+  async hasNar(filename) { return (await this._findAsset(filename)) !== null; }
 
   async getNarStream(filename) {
     const asset = await this._findAsset(filename);
     if (!asset) return null;
-
-    const resp = await fetch(asset.url, {
-      headers: {
-        ...this._headers(),
-        Accept: 'application/octet-stream',
-      },
-      redirect: 'follow',
+    const resp = await this._request(asset.url, {
+      headers: { ...this._headers(), Accept: 'application/octet-stream' }, redirect: 'follow',
     });
-
-    if (!resp.ok) return null;
-
-    const { Readable } = require('stream');
+    if (!resp.ok) throw new Error(`Cannot download NAR ${filename}: ${resp.status}`);
     return Readable.fromWeb(resp.body);
   }
 
   async putNarStream(filename, readableStream) {
-    const releaseId = await this._getReleaseId();
-
-    // Collect stream into buffer for upload.
-    // Note: GitHub's upload API requires Content-Length, so the full NAR
-    // must be buffered.  For very large NARs consider using S3 storage.
-    const chunks = [];
-    for await (const chunk of readableStream) {
-      chunks.push(Buffer.from(chunk));
-    }
-    const body = Buffer.concat(chunks);
-
-    console.log(`[github-releases] Uploading NAR asset ${filename} (${body.length} bytes)`);
-
-    // Delete existing asset with the same name if present
-    const existing = await this._findAsset(filename);
-    if (existing) {
-      console.log(`[github-releases] Deleting existing asset ${filename} (id=${existing.id})`);
-      await fetch(
-        `https://api.github.com/repos/${this.owner}/${this.repo}/releases/assets/${existing.id}`,
-        { method: 'DELETE', headers: this._headers() }
-      );
-    }
-
-    const uploadUrl = `https://uploads.github.com/repos/${this.owner}/${this.repo}/releases/${releaseId}/assets?name=${encodeURIComponent(filename)}`;
-    const resp = await fetch(uploadUrl, {
-      method: 'POST',
-      headers: {
-        ...this._headers(),
-        'Content-Type': 'application/octet-stream',
-        'Content-Length': String(body.length),
-      },
-      body,
-    });
-
-    if (!resp.ok) {
-      const errBody = await resp.text();
-      console.error(`[github-releases] Failed to upload asset ${filename}: ${resp.status} ${errBody}`);
-      throw new Error(`Failed to upload release asset: ${resp.status} ${errBody}`);
-    }
-
-    console.log(`[github-releases] Uploaded asset ${filename} successfully`);
-  }
-
-  /**
-   * Find a release asset by filename (paginates through all assets).
-   * @param {string} filename
-   * @returns {Promise<object|null>}
-   */
-  async _findAsset(filename) {
-    const releaseId = await this._getReleaseId();
-    let page = 1;
-
-    while (true) {
-      const url = `https://api.github.com/repos/${this.owner}/${this.repo}/releases/${releaseId}/assets?per_page=100&page=${page}`;
-      const resp = await fetch(url, { headers: this._headers() });
-
-      if (!resp.ok) return null;
-
-      const assets = await resp.json();
-      if (assets.length === 0) return null;
-
-      const match = assets.find(a => a.name === filename);
-      if (match) return match;
-
-      if (assets.length < 100) return null;
-      page++;
+    // Spool to disk to determine Content-Length without retaining GiB in RAM.
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'static-nix-cache-nar-'));
+    const file = path.join(dir, 'asset');
+    let size = 0;
+    try {
+      await pipeline(readableStream, new Transform({ transform(chunk, encoding, done) {
+        size += chunk.length;
+        if (size >= MAX_ASSET_BYTES) return done(new Error('NAR must be under 2 GiB; enable compression or use S3'));
+        done(null, chunk);
+      } }), fs.createWriteStream(file));
+      await this._serialize(() => this._upload(filename, size,
+        () => fs.createReadStream(file), 'application/octet-stream'));
+    } finally {
+      await fsp.rm(dir, { recursive: true, force: true });
     }
   }
 
-  /**
-   * List all release assets (paginates through all pages).
-   * @returns {Promise<object[]>}
-   */
-  async _listAllAssets() {
-    const releaseId = await this._getReleaseId();
-    const all = [];
-    let page = 1;
-
-    while (true) {
-      const url = `https://api.github.com/repos/${this.owner}/${this.repo}/releases/${releaseId}/assets?per_page=100&page=${page}`;
-      const resp = await fetch(url, { headers: this._headers() });
-
-      if (!resp.ok) break;
-
-      const assets = await resp.json();
-      if (assets.length === 0) break;
-
-      all.push(...assets);
-      if (assets.length < 100) break;
-      page++;
-    }
-
-    return all;
-  }
-
-  /**
-   * Read all local narinfo files and extract the NAR filenames they reference.
-   * Narinfo files contain a `URL:` field like `nar/<filename>`.
-   * @returns {Promise<Set<string>>}
-   */
   async _getReferencedNarFilenames() {
     const narinfoDir = path.join(this.localPath, 'narinfo');
     const referenced = new Set();
@@ -342,7 +287,7 @@ class GitHubReleasesStorage {
           if (line.startsWith('URL:')) {
             const url = line.slice(4).trim();
             // URL is typically "nar/<filename>" – extract just the filename
-            const filename = url.startsWith('nar/') ? url.slice(4) : url;
+            const filename = decodeURIComponent(new URL(url, 'https://cache.invalid/').pathname.split('/').pop());
             if (filename) referenced.add(filename);
           }
         }
@@ -370,6 +315,7 @@ class GitHubReleasesStorage {
   async pruneAssets({ retentionDays = 0 } = {}) {
     console.log(`[github-releases] Starting asset pruning (retentionDays=${retentionDays})`);
 
+    await this.fetchAllNarinfo();
     const [assets, referenced] = await Promise.all([
       this._listAllAssets(),
       this._getReferencedNarFilenames(),
@@ -405,13 +351,15 @@ class GitHubReleasesStorage {
       }
 
       console.log(`[github-releases] Deleting orphaned asset ${asset.name} (id=${asset.id})`);
-      const resp = await fetch(
+      const resp = await this._request(
         `https://api.github.com/repos/${this.owner}/${this.repo}/releases/assets/${asset.id}`,
         { method: 'DELETE', headers: this._headers() }
       );
 
       if (resp.ok) {
         deleted.push(asset.name);
+        this._assets.delete(asset.name);
+        asset.shard.count--;
       } else {
         console.error(`[github-releases] Failed to delete asset ${asset.name}: ${resp.status}`);
         kept.push(asset.name);
@@ -423,14 +371,9 @@ class GitHubReleasesStorage {
     return { deleted, kept, referenced: referencedNames };
   }
 
-  /**
-   * Return the public download URL for a NAR file on GitHub Releases.
-   * This URL does not require authentication.
-   * @param {string} filename
-   * @returns {string}
-   */
   narDownloadUrl(filename) {
-    return `https://github.com/${this.owner}/${this.repo}/releases/download/${encodeURIComponent(this.releaseTag)}/${encodeURIComponent(filename)}`;
+    const tag = this._assets.get(filename)?.shard.tag || this.releaseTag;
+    return `https://github.com/${this.owner}/${this.repo}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(filename)}`;
   }
 }
 

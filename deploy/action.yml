@@ -37,6 +37,10 @@ inputs:
     description: 'GitHub release tag for NAR storage'
     required: false
     default: 'nix-cache'
+  upstream-caches:
+    description: 'Whitespace-separated trusted cache URLs whose paths should not be mirrored'
+    required: false
+    default: ''
   signing-key:
     description: 'Nix signing key (keyname:base64-ed25519-private)'
     required: false
@@ -53,7 +57,7 @@ inputs:
   compression:
     description: 'Compression type for nix copy (none, xz, zstd)'
     required: false
-    default: 'none'
+    default: 'xz'
 
 runs:
   using: composite
@@ -198,6 +202,8 @@ runs:
       shell: bash
       env:
         STORAGE_BACKEND: ${{ inputs.backend }}
+        UPSTREAM_CACHES: ${{ inputs.upstream-caches }}
+        LOCAL_STORAGE_PATH: ${{ runner.temp }}/static-nix-cache-storage
         GITHUB_TOKEN: ${{ inputs.github-token }}
         GITHUB_OWNER: ${{ inputs.github-owner }}
         GITHUB_REPO: ${{ inputs.github-repo }}
@@ -205,6 +211,7 @@ runs:
         SIGNING_KEY: ${{ inputs.signing-key }}
         UPLOAD_SECRET: ${{ inputs.upload-secret }}
         PORT: ${{ inputs.port }}
+        HOST: '127.0.0.1'
         STATIC_NIX_CACHE_DIR: ${{ steps.install.outputs.static-nix-cache-dir }}
       run: |
         set -euo pipefail
@@ -262,6 +269,8 @@ runs:
         GITHUB_RELEASE_TAG: ${{ inputs.github-release-tag }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
         OUTPUT_DIR: ${{ inputs.static }}
+        STORAGE_BACKEND: ${{ inputs.backend }}
+        LOCAL_STORAGE_PATH: ${{ runner.temp }}/static-nix-cache-storage
         STATIC_NIX_CACHE_DIR: ${{ steps.install.outputs.static-nix-cache-dir }}
       run: |
         set -euo pipefail
@@ -278,6 +287,6 @@ runs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: static-nix-cache-deploy-log
+        name: static-nix-cache-deploy-log-${{ github.job }}-${{ strategy.job-index || 0 }}-${{ github.run_attempt }}
         path: /tmp/static-nix-cache-deploy.log
         retention-days: 7

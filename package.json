@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node index.js",
     "generate-static": "node generate-static.js",
-    "test": "jest tests/"
+    "test": "jest tests/",
+    "test:nix": "node scripts/test-nix-integration.js"
   },
   "repository": {
     "type": "git",
