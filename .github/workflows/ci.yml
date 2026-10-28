@@ -48,5 +48,11 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action@main
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npm run test:nix
+
       - run: nix flake check --no-build --accept-flake-config
       - run: nix build --accept-flake-config

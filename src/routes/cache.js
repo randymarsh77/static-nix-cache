@@ -23,6 +23,29 @@ function createCacheRouter(storage, config) {
   const router = express.Router();
   const authMiddleware = requireUploadSecret(config.uploadSecret);
 
+  // Answer recursive nix-copy presence checks using trusted upstream caches.
+  // Returning their metadata skips dependencies, not just the requested roots.
+  const upstreamResults = new Map();
+  async function lookupNarinfo(hash) {
+    const local = await storage.getNarinfo(hash);
+    if (local !== null) return local;
+    if (upstreamResults.has(hash)) return upstreamResults.get(hash);
+    for (const upstream of config.upstreamCaches || []) {
+      const base = upstream.replace(/\/$/, '') + '/';
+      const response = await fetch(`${base}${encodeURIComponent(hash)}.narinfo`, {
+        signal: AbortSignal.timeout(30000),
+      });
+      if (response.status === 404) continue;
+      if (!response.ok) throw new Error(`Upstream cache returned ${response.status}`);
+      const content = (await response.text()).replace(/^URL: (.+)$/m,
+        (_, url) => `URL: ${new URL(url.trim(), base).href}`);
+      upstreamResults.set(hash, content);
+      return content;
+    }
+    upstreamResults.set(hash, null);
+    return null;
+  }
+
   // ---------------------------------------------------------------------------
   // GET /nix-cache-info
   // ---------------------------------------------------------------------------
@@ -40,7 +63,7 @@ function createCacheRouter(storage, config) {
   // ---------------------------------------------------------------------------
   router.head('/:hash.narinfo', async (req, res) => {
     try {
-      const exists = await storage.hasNarinfo(req.params.hash);
+      const exists = (await lookupNarinfo(req.params.hash)) !== null;
       res.sendStatus(exists ? 200 : 404);
     } catch (err) {
       res.sendStatus(500);
@@ -52,7 +75,7 @@ function createCacheRouter(storage, config) {
   // ---------------------------------------------------------------------------
   router.get('/:hash.narinfo', async (req, res) => {
     try {
-      const content = await storage.getNarinfo(req.params.hash);
+      const content = await lookupNarinfo(req.params.hash);
       if (content === null) {
         return res.sendStatus(404);
       }
@@ -136,7 +159,9 @@ function parseNarinfo(text) {
       references.push(...value.split(/\s+/).filter(Boolean));
     }
   }
-  obj.references = references;
+  // narinfo serializes reference basenames; Nix signs full store paths.
+  const storeDir = obj.storePath?.slice(0, obj.storePath.lastIndexOf('/')) || '/nix/store';
+  obj.references = references.map(ref => ref.startsWith('/') ? ref : `${storeDir}/${ref}`).sort();
   return obj;
 }
 

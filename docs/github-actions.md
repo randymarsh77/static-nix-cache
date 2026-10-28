@@ -263,3 +263,59 @@ Deploy auto-detects store paths in this priority order:
 2. Saved artifacts (auto-restored from `static-nix-cache-*` pattern)
 3. Setup snapshot (diffing current store against snapshot)
 4. magic-nix-cache daemon at default address (`127.0.0.1:37515`)
+
+## Large caches and GitHub Pages
+
+On the next version containing these changes, the GitHub Releases backend rolls
+uploads over at 900 assets per release. It uses the configured base tag first,
+then `nix-cache-000001`, `nix-cache-000002`, etc. Both NARs and narinfo count toward
+this threshold; a NAR and its metadata may be in different shards. Metadata has
+an absolute download URL, so GitHub Pages needs no redirect support. The static
+export reconstructs the combined index from every cache release, including
+previous jobs and architectures. Existing base-tag releases are discovered too.
+
+Use **one writer at a time per repository and tag prefix**. Set the same workflow
+`concurrency.group` in every publishing workflow, `cancel-in-progress: false`,
+and `strategy.max-parallel: 1` for matrix jobs that upload directly. Readers can
+run in parallel. Keep PR jobs read-only; pass a signing secret and `contents:
+write` only to trusted default-branch builds. Deploy the combined Pages site once
+after all matrix uploads. Use `pages: write` and `id-token: write` for that job.
+
+For direct publishing, run `setup` before the build and `deploy` afterward with:
+
+```yaml
+with:
+  github-token: ${{ github.token }}
+  signing-key: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
+  compression: xz
+  upstream-caches: https://cache.nixos.org
+```
+
+The upstream option is opt-in. The server answers recursive Nix presence checks
+from those trusted caches, so dependencies already available upstream are not
+mirrored. Keep those upstream URLs in clients' substituters as well. Network and
+API failures abort publication rather than exporting an incomplete cache index.
+
+Direct uploads avoid staging large NAR closures in Actions artifacts. `save`
+remains available when staging is appropriate, but Actions storage quotas and
+billing apply independently of Release assets. When running `generate-static.js`
+in a separate Pages job, set `STORAGE_BACKEND=github-releases`, `GITHUB_TOKEN`,
+`GITHUB_OWNER`, `GITHUB_REPO`, and the same `GITHUB_RELEASE_TAG`.
+
+GitHub limits each release to 1,000 assets and each asset to **less than 2 GiB**.
+The deploy action now defaults to xz compression; oversized compressed files
+fail with an actionable error. NAR uploads spool to temporary disk, so runners
+need free disk space for active uploads, but not equivalent RAM. API requests
+are indexed per process and paced (4 seconds between API calls; 7.5 seconds
+between writes), with bounded retries for throttling and server errors. Initial
+bulk imports can take hours. Release storage has no documented aggregate size
+limit; the generated Pages site still has its own 1 GB limit and bandwidth quota.
+
+Cache assets are immutable. Signing-key rotation requires a new tag prefix and
+fresh local metadata directory so paths can be signed with the new key. Keep the
+old public key trusted until all consumers have moved. Pruning only removes
+orphaned NARs after loading all metadata; it is not a historical cache eviction
+policy. Do not delete published cache releases manually while clients use them.
+
+Limits: [GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases),
+[GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits).

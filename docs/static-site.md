@@ -52,3 +52,12 @@ Upload the contents of the output directory to any static hosting provider. Ensu
 :::note
 The `_redirects` file is specific to Cloudflare Pages. For other hosts that don't support `_redirects`, Nix clients will resolve NAR URLs from the narinfo files, which point directly to the GitHub Release asset URLs.
 :::
+
+### Release shards
+
+Generated narinfo uses absolute release-download URLs. Existing absolute URLs
+are preserved, including URLs pointing at numbered release shards. For a legacy
+local directory with relative URLs, the standalone generator resolves them
+against `GITHUB_RELEASE_TAG`; use the GitHub Releases backend to reconstruct the
+full asset index when generating a sharded cache. `_redirects` remains only a
+legacy convenience for Cloudflare hosts. `.nojekyll` is emitted for GitHub Pages.
