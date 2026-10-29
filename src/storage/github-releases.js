@@ -96,10 +96,21 @@ class GitHubReleasesStorage {
   async _init() {
     if (!this._initializing) this._initializing = (async () => {
       const releases = await this._pages(`${this._api}/releases`);
+      const cacheReleases = new Map();
       for (const release of releases) {
         const suffix = release.tag_name.slice(this.releaseTag.length);
         if (release.tag_name !== this.releaseTag &&
           !(release.tag_name.startsWith(this.releaseTag) && /^-\d{6}$/.test(suffix))) continue;
+        const matches = cacheReleases.get(release.tag_name) || [];
+        matches.push(release);
+        cacheReleases.set(release.tag_name, matches);
+      }
+      for (const [tag, matches] of cacheReleases) {
+        // Legacy concurrent writers could create multiple releases for one tag.
+        // Only the release resolved by GitHub's tag endpoint backs public
+        // /releases/download/<tag>/ URLs. Do not index or write hidden copies.
+        const release = matches.length === 1 ? matches[0] :
+          await this._json(`${this._api}/releases/tags/${encodeURIComponent(tag)}`);
         if (release.draft) throw new Error(`Cache release ${release.tag_name} is a draft`);
         const assets = await this._pages(`${this._api}/releases/${release.id}/assets`);
         const shard = { id: release.id, tag: release.tag_name, count: assets.length };
