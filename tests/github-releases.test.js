@@ -119,6 +119,45 @@ describe('GitHub release cache', () => {
     expect(await storage.hasNar('unrelated.nar')).toBe(false);
   });
 
+  test.each([false, true])('resolves duplicate legacy tags before indexing (reverse=%s)', async reverse => {
+    const hidden = release();
+    const canonical = release();
+    asset(hidden, 'abc.nar', 'hidden');
+    asset(hidden, 'hidden-only.nar');
+    const publicNar = asset(canonical, 'abc.nar', 'public');
+    asset(canonical, 'abc.narinfo', 'URL: nar/abc.nar\n');
+    if (reverse) releases.reverse();
+    const api = global.fetch.getMockImplementation();
+    global.fetch.mockImplementation((url, options) =>
+      url.endsWith('/releases/tags/nix-cache') ? response(canonical) : api(url, options));
+
+    expect(await storage.fetchAllNarinfo()).toBe(1);
+    expect(await storage._findAsset('abc.nar')).toMatchObject({ id: publicNar.id });
+    expect(await storage.hasNar('hidden-only.nar')).toBe(false);
+    expect(await storage.getNarinfo('abc')).toContain('/download/nix-cache/abc.nar');
+    await storage.putNarStream('new.nar', Readable.from('new data'));
+    expect(assets.find(a => a.name === 'new.nar').releaseId).toBe(canonical.id);
+    expect(storage._shards).toEqual([{ id: canonical.id, tag: 'nix-cache', count: 3 }]);
+    expect(global.fetch.mock.calls.some(([url]) =>
+      url.includes(`/releases/${hidden.id}/assets`))).toBe(false);
+  });
+
+  test('duplicate tag resolution failure is fatal', async () => {
+    release();
+    release();
+    const api = global.fetch.getMockImplementation();
+    global.fetch.mockImplementation((url, options) =>
+      url.endsWith('/releases/tags/nix-cache') ? response('missing', 404) : api(url, options));
+    await expect(storage.fetchAllNarinfo()).rejects.toThrow('404');
+    expect(storage._shards).toHaveLength(0);
+  });
+
+  test('duplicate asset names across distinct shards remain fatal', async () => {
+    asset(release(), 'abc.nar');
+    asset(release('nix-cache-000001'), 'abc.nar');
+    await expect(storage.fetchAllNarinfo()).rejects.toThrow('Duplicate cache asset');
+  });
+
   test('repeated and concurrent writes preserve immutable assets', async () => {
     await Promise.all(Array.from({ length: 4 }, () =>
       storage.putNarStream('abc.nar', Readable.from('data'))));
