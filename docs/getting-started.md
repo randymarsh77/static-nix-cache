@@ -8,6 +8,15 @@ static-nix-cache is a self-hosted [Nix binary cache](https://nixos.wiki/wiki/Bin
 
 ## Quick Start
 
+First, [provision the repository](repository-setup.md) as an authenticated
+administrator:
+
+```bash
+nix run github:randymarsh77/static-nix-cache#setup-github -- --repo OWNER/REPO
+```
+
+This configures Pages, deployment permissions, and signing keys programmatically.
+
 The fastest way to set up a cache for your project is with the **setup** + **deploy** GitHub Actions:
 
 Use `v1` for both actions to track the supported major version, including setup
@@ -44,6 +53,7 @@ jobs:
       - uses: randymarsh77/static-nix-cache/deploy@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          signing-key: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
           static: ./site
 
       - uses: actions/upload-pages-artifact@v3
@@ -70,7 +80,7 @@ Point Nix at your new cache by adding it as a substituter:
 # flake.nix
 {
   nixConfig = {
-    extra-substituters = [ "https://<owner>.github.io/<repo>/cache" ];
+    extra-substituters = [ "https://<owner>.github.io/<repo>" ];
     extra-trusted-public-keys = [ "my-cache-1:<base64-public-key>" ];
   };
   # ...
@@ -80,6 +90,6 @@ Point Nix at your new cache by adding it as a substituter:
 Or in `nix.conf`:
 
 ```ini
-substituters = https://cache.nixos.org https://<owner>.github.io/<repo>/cache
+substituters = https://cache.nixos.org https://<owner>.github.io/<repo>
 trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= my-cache-1:<base64-public-key>
 ```
