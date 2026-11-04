@@ -33,11 +33,18 @@ static-nix-cache is configured entirely through environment variables.
 
 ## Signing Keys
 
+For automated GitHub Releases / Pages provisioning, see
+[Provision a GitHub cache](repository-setup.md).
+
 Signing narinfo files lets Nix verify that cached store paths haven't been tampered with. Generate a key pair with:
 
 ```bash
 nix-store --generate-binary-cache-key my-cache-1 private.pem public.pem
 ```
+
+The modern commands `nix key generate-secret` and
+`nix key convert-secret-to-public`, used by the provisioning script, produce
+the same Nix Ed25519 key format.
 
 Pass the private key to static-nix-cache via the `SIGNING_KEY` environment variable:
 

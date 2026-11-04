@@ -14,6 +14,16 @@ Your team gets fast, cached builds — no servers or cloud storage bills require
 
 ## Quick Start
 
+An administrator can provision Pages, deployment permissions, and signing keys
+for the target repository with:
+
+```bash
+nix run github:randymarsh77/static-nix-cache#setup-github -- --repo OWNER/REPO
+```
+
+See [repository provisioning](docs/repository-setup.md) for authentication,
+existing sites, release tags, secure key backups, and workflow dispatch.
+
 Add a workflow to your repository:
 
 These examples use `v1`, the floating major tag for the supported setup and
@@ -51,6 +61,7 @@ jobs:
       - uses: randymarsh77/static-nix-cache/deploy@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          signing-key: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
           static: ./site
 
       - uses: actions/upload-pages-artifact@v3
@@ -63,12 +74,15 @@ jobs:
 
 No need to capture store paths manually — the **setup** action snapshots the Nix store before your build, and the **deploy** action auto-detects new paths by diffing the store.
 
-Then point Nix at your cache:
+Then point Nix at your cache using the URL and public key printed by setup:
 
 ```nix
 # flake.nix
 {
-  nixConfig.extra-substituters = [ "https://<owner>.github.io/<repo>" ];
+  nixConfig = {
+    extra-substituters = [ "https://<owner>.github.io/<repo>" ];
+    extra-trusted-public-keys = [ "<key-name>:<base64-public-key>" ];
+  };
 }
 ```
 
@@ -78,6 +92,7 @@ Full documentation is available at **[randymarsh77.github.io/static-nix-cache](h
 
 - [Getting Started](https://randymarsh77.github.io/static-nix-cache/docs/getting-started)
 - [Configuration](https://randymarsh77.github.io/static-nix-cache/docs/configuration)
+- [Repository Setup](docs/repository-setup.md)
 - [Static Site Generation](https://randymarsh77.github.io/static-nix-cache/docs/static-site)
 - [Storage Backends](https://randymarsh77.github.io/static-nix-cache/docs/storage-backends)
 - [GitHub Actions](https://randymarsh77.github.io/static-nix-cache/docs/github-actions)
