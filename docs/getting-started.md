@@ -70,7 +70,7 @@ Point Nix at your new cache by adding it as a substituter:
 # flake.nix
 {
   nixConfig = {
-    extra-substituters = [ "https://<owner>.github.io/<repo>/cache" ];
+    extra-substituters = [ "https://<owner>.github.io/<repo>" ];
     extra-trusted-public-keys = [ "my-cache-1:<base64-public-key>" ];
   };
   # ...
@@ -80,6 +80,6 @@ Point Nix at your new cache by adding it as a substituter:
 Or in `nix.conf`:
 
 ```ini
-substituters = https://cache.nixos.org https://<owner>.github.io/<repo>/cache
+substituters = https://cache.nixos.org https://<owner>.github.io/<repo>
 trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= my-cache-1:<base64-public-key>
 ```
