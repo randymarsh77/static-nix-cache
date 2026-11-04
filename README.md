@@ -68,7 +68,7 @@ Then point Nix at your cache:
 ```nix
 # flake.nix
 {
-  nixConfig.extra-substituters = [ "https://<owner>.github.io/<repo>/cache" ];
+  nixConfig.extra-substituters = [ "https://<owner>.github.io/<repo>" ];
 }
 ```
 
