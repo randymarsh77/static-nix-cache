@@ -41,6 +41,10 @@ inputs:
     description: 'Whitespace-separated trusted cache URLs whose paths should not be mirrored'
     required: false
     default: ''
+  upstream-public-keys:
+    description: 'Whitespace-separated public keys of the upstream caches (keyname:base64). A store path one of them signed is skipped without a request to any cache. The key of https://cache.nixos.org is known and need not be given.'
+    required: false
+    default: ''
   signing-key:
     description: 'Nix signing key (keyname:base64-ed25519-private)'
     required: false
@@ -244,6 +248,9 @@ runs:
         EXPORT_DIR: ${{ inputs.export-dir || steps.aggregate.outputs.export-dir }}
         PORT: ${{ inputs.port }}
         COMPRESSION: ${{ inputs.compression }}
+        UPSTREAM_CACHES: ${{ inputs.upstream-caches }}
+        UPSTREAM_PUBLIC_KEYS: ${{ inputs.upstream-public-keys }}
+        STATIC_NIX_CACHE_DIR: ${{ steps.install.outputs.static-nix-cache-dir }}
       run: |
         set -euo pipefail
         PATHS_FILE="${{ steps.prepare.outputs.paths-file }}"
@@ -254,9 +261,18 @@ runs:
           echo "Copying from exported binary cache: $EXPORT_DIR"
         fi
 
+        # A path an upstream cache signed came from that cache: skip it here, from what the
+        # local store knows, rather than spend a request on it. Paths from an export
+        # directory are not in the local store, so those are all checked.
+        if [ "${#copy_args[@]}" -eq 0 ]; then
+          node "$STATIC_NIX_CACHE_DIR/scripts/skip-upstream-signed.js" "$PATHS_FILE"
+        fi
+
+        # Each path is offered to the cache, which takes only what it and its upstream
+        # caches do not already have.
         while IFS= read -r p; do
           [ -z "$p" ] && continue
-          echo "Pushing: $p"
+          echo "Checking: $p"
           nix copy "${copy_args[@]}" --to "http://localhost:${PORT}?compression=${COMPRESSION}" --no-check-sigs "$p"
         done < "$PATHS_FILE"
 

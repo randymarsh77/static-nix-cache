@@ -296,6 +296,26 @@ from those trusted caches, so dependencies already available upstream are not
 mirrored. Keep those upstream URLs in clients' substituters as well. Network and
 API failures abort publication rather than exporting an incomplete cache index.
 
+`deploy` offers the cache every store path that appeared since `setup`, and the
+log names each as `Checking:`. Most of them were downloaded, not built, and are
+not uploaded. Before asking any cache, `deploy` drops the paths that carry a
+valid signature from an upstream cache: the signature shows where the path came
+from, and reading it costs no request. For a system of several hundred paths
+this leaves only the ones built or fetched in the job to be checked.
+
+The key of `https://cache.nixos.org` is known. For another upstream cache, give
+its public key:
+
+```yaml
+with:
+  upstream-caches: https://cache.nixos.org https://example.cachix.org
+  upstream-public-keys: example.cachix.org-1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+```
+
+A signature is verified against the key, not matched by name. A path whose
+signature cannot be read or does not verify is checked against the caches as
+before, so nothing is left out of the cache by this step failing.
+
 Direct uploads avoid staging large NAR closures in Actions artifacts. `save`
 remains available when staging is appropriate, but Actions storage quotas and
 billing apply independently of Release assets. When running `generate-static.js`
