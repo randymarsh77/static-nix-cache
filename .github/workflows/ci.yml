@@ -54,5 +54,12 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run test:nix
 
+      # The test job has no Nix, so the tests of real signing keys run only here.
+      - name: Test repository provisioning against Nix
+        run: npx jest tests/setup-github-cache.test.js
+
+      - name: Check provisioning CLI
+        run: nix run .#setup-github -- --help
+
       - run: nix flake check --no-build --accept-flake-config
       - run: nix build --accept-flake-config

@@ -58,8 +58,23 @@
         {
           default = staticNixCache;
           "static-nix-cache" = staticNixCache;
+          setup-github = pkgs.writeShellApplication {
+            name = "static-nix-cache-setup-github";
+            runtimeInputs = [ pkgs.nodejs pkgs.gh pkgs.git pkgs.nix ];
+            text = ''
+              exec node ${./scripts/setup-github-cache.js} "$@"
+            '';
+          };
         }
       );
+
+      apps = forAllSystems (system: {
+        setup-github = {
+          type = "app";
+          program = "${self.packages.${system}.setup-github}/bin/static-nix-cache-setup-github";
+          meta.description = "Provision a signed GitHub Releases and Pages cache";
+        };
+      });
 
       devShells = forAllSystems (system:
         let pkgs = pkgsFor system; in
