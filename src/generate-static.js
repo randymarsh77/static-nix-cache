@@ -3,6 +3,7 @@
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
+const { repairEmptyFields } = require('./narinfo');
 
 /**
  * Generate a static Nix binary cache site from locally stored narinfo files.
@@ -61,7 +62,7 @@ async function generateStaticSite(options) {
   const narinfoFiles = entries.filter(f => f.endsWith('.narinfo'));
   for (const filename of narinfoFiles) {
     const content = await fsp.readFile(path.join(narinfoDir, filename), 'utf8');
-    const published = content.replace(/^URL: nar\/(.+)$/m, (_, name) =>
+    const published = repairEmptyFields(content).replace(/^URL: nar\/(.+)$/m, (_, name) =>
       `URL: ${narBaseUrl}/${encodeURIComponent(name.trim())}`);
     await fsp.writeFile(path.join(outputDir, filename), published, 'utf8');
   }

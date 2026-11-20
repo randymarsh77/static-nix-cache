@@ -3,6 +3,7 @@
 const express = require('express');
 const { requireUploadSecret } = require('../middleware/auth');
 const { signNarinfo } = require('../signing');
+const { repairEmptyFields } = require('../narinfo');
 
 /**
  * Build the Express router for the Nix binary cache HTTP API.
@@ -28,7 +29,7 @@ function createCacheRouter(storage, config) {
   const upstreamResults = new Map();
   async function lookupNarinfo(hash) {
     const local = await storage.getNarinfo(hash);
-    if (local !== null) return local;
+    if (local !== null) return repairEmptyFields(local);
     if (upstreamResults.has(hash)) return upstreamResults.get(hash);
     for (const upstream of config.upstreamCaches || []) {
       const base = upstream.replace(/\/$/, '') + '/';
@@ -177,9 +178,10 @@ function addSignature(content, signingKey) {
 
   // Remove any existing Sig lines, then append ours
   const lines = content.split('\n').filter(l => !l.startsWith('Sig:'));
-  // Ensure no trailing blank line before we add ours
-  const trimmed = lines.join('\n').trimEnd();
+  // Ensure no trailing blank line before we add ours. Only line ends are
+  // removed: the space that ends an empty "References: " line has to stay.
+  const trimmed = repairEmptyFields(lines.join('\n').replace(/[\r\n]+$/, ''));
   return `${trimmed}\nSig: ${sig}\n`;
 }
 
-module.exports = { createCacheRouter };
+module.exports = { createCacheRouter, addSignature };
