@@ -281,14 +281,15 @@ deployed.
 - uses: randymarsh77/static-nix-cache/deploy@v1
   with:
     backend: r2
-    r2-account-id: ${{ secrets.R2_ACCOUNT_ID }}
-    r2-bucket: my-nix-cache
+    r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+    r2-bucket: ${{ vars.R2_BUCKET }}
     r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
     r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
     signing-key: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
 ```
 
-The job needs no `contents: write`, `pages: write`, or Pages deployment. See
+The job needs no `contents: write`, `pages: write`, or Pages deployment.
+[`setup-r2`](./r2-setup.md) provisions the bucket, tokens, secrets and variables. See
 [Storage Backends](./storage-backends.md#cloudflare-r2-private) for creating the
 bucket and configuring the machines that read it.
 

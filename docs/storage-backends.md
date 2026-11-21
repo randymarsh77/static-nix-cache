@@ -58,6 +58,9 @@ npm start
 
 ### Creating the bucket and tokens
 
+[`setup-r2`](./r2-setup.md) does all of this, including the repository secrets
+and variables. To do it by hand instead:
+
 1. In the Cloudflare dashboard, create an R2 bucket (for example
    `my-nix-cache`). Leave public access and custom domains off.
 2. Create two R2 API tokens scoped to that bucket:

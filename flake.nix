@@ -65,6 +65,14 @@
               exec node ${./scripts/setup-github-cache.js} "$@"
             '';
           };
+          # op (the 1Password CLI) is unfree, so it is taken from PATH when asked for.
+          setup-r2 = pkgs.writeShellApplication {
+            name = "static-nix-cache-setup-r2";
+            runtimeInputs = [ pkgs.nodejs pkgs.gh pkgs.git pkgs.nix ];
+            text = ''
+              exec node ${./scripts}/setup-r2-cache.js "$@"
+            '';
+          };
         }
       );
 
@@ -73,6 +81,11 @@
           type = "app";
           program = "${self.packages.${system}.setup-github}/bin/static-nix-cache-setup-github";
           meta.description = "Provision a signed GitHub Releases and Pages cache";
+        };
+        setup-r2 = {
+          type = "app";
+          program = "${self.packages.${system}.setup-r2}/bin/static-nix-cache-setup-r2";
+          meta.description = "Provision a private, signed Cloudflare R2 cache";
         };
       });
 

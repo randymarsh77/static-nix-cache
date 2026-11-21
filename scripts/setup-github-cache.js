@@ -535,14 +535,18 @@ function main(argv) {
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
 module.exports = {
+  NIX,
   SetupError,
   UsageError,
   environmentBody,
+  expandHome,
+  lstat,
   paginated,
   parseArguments,
   patternMatches,
   prepareKey,
   publicKey,
+  resolveRepository,
   setup,
   system,
 };
