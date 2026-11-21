@@ -21,7 +21,7 @@ inputs:
     required: false
     default: 'static-nix-cache-*'
   backend:
-    description: 'Storage backend: github-releases, s3, or local'
+    description: 'Storage backend: github-releases, r2, s3, or local'
     required: false
     default: 'github-releases'
   github-token:
@@ -37,6 +37,21 @@ inputs:
     description: 'GitHub release tag for NAR storage'
     required: false
     default: 'nix-cache'
+  r2-account-id:
+    description: 'Cloudflare account ID (r2 backend)'
+    required: false
+  r2-bucket:
+    description: 'R2 bucket name (r2 backend). Kept private; machines read it as s3://<bucket>?endpoint=<account-id>.r2.cloudflarestorage.com&region=auto'
+    required: false
+  r2-access-key-id:
+    description: 'R2 API token access key ID with Object Read & Write on the bucket (r2 backend)'
+    required: false
+  r2-secret-access-key:
+    description: 'R2 API token secret access key (r2 backend)'
+    required: false
+  r2-endpoint:
+    description: 'R2 S3 endpoint override, e.g. for an EU jurisdiction bucket (defaults to https://<account-id>.r2.cloudflarestorage.com)'
+    required: false
   upstream-caches:
     description: 'Whitespace-separated trusted cache URLs whose paths should not be mirrored'
     required: false
@@ -212,6 +227,11 @@ runs:
         GITHUB_OWNER: ${{ inputs.github-owner }}
         GITHUB_REPO: ${{ inputs.github-repo }}
         GITHUB_RELEASE_TAG: ${{ inputs.github-release-tag }}
+        R2_ACCOUNT_ID: ${{ inputs.r2-account-id }}
+        R2_BUCKET: ${{ inputs.r2-bucket }}
+        R2_ACCESS_KEY_ID: ${{ inputs.r2-access-key-id }}
+        R2_SECRET_ACCESS_KEY: ${{ inputs.r2-secret-access-key }}
+        R2_ENDPOINT: ${{ inputs.r2-endpoint }}
         SIGNING_KEY: ${{ inputs.signing-key }}
         UPLOAD_SECRET: ${{ inputs.upload-secret }}
         PORT: ${{ inputs.port }}

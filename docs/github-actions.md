@@ -252,6 +252,11 @@ Pushes store paths to the configured backend and optionally generates a static s
 | `github-owner` | no | *current owner* | Repository owner |
 | `github-repo` | no | *current repo* | Repository name |
 | `github-release-tag` | no | `nix-cache` | Release tag for NAR storage |
+| `r2-account-id` | no | | Cloudflare account ID (`r2`) |
+| `r2-bucket` | no | | R2 bucket name (`r2`) |
+| `r2-access-key-id` | no | | R2 API token access key ID, Object Read & Write (`r2`) |
+| `r2-secret-access-key` | no | | R2 API token secret (`r2`) |
+| `r2-endpoint` | no | *account endpoint* | Endpoint override, e.g. an EU jurisdiction bucket (`r2`) |
 | `signing-key` | no | | Nix signing key |
 | `upload-secret` | no | | Bearer token for upload auth |
 | `static` | no | | Output dir for static site generation |
@@ -263,6 +268,29 @@ Deploy auto-detects store paths in this priority order:
 2. Saved artifacts (auto-restored from `static-nix-cache-*` pattern)
 3. Setup snapshot (diffing current store against snapshot)
 4. magic-nix-cache daemon at default address (`127.0.0.1:37515`)
+
+## Private cache on Cloudflare R2
+
+GitHub release downloads of a **private** repository need authentication Nix
+cannot send, so a release-backed cache of a private repository cannot be read.
+Use the `r2` backend instead: NARs and narinfo go to a private R2 bucket, laid
+out so Nix reads it directly as an `s3://` store. No static site is generated or
+deployed.
+
+```yaml
+- uses: randymarsh77/static-nix-cache/deploy@v1
+  with:
+    backend: r2
+    r2-account-id: ${{ secrets.R2_ACCOUNT_ID }}
+    r2-bucket: my-nix-cache
+    r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+    r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+    signing-key: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
+```
+
+The job needs no `contents: write`, `pages: write`, or Pages deployment. See
+[Storage Backends](./storage-backends.md#cloudflare-r2-private) for creating the
+bucket and configuring the machines that read it.
 
 ## Large caches and GitHub Pages
 

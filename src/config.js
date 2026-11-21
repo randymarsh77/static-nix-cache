@@ -8,7 +8,7 @@ module.exports = {
 
   priority: parseInt(process.env.CACHE_PRIORITY || '30', 10),
 
-  // Storage backend: 'local', 's3', or 'github-releases'
+  // Storage backend: 'local', 's3', 'r2', or 'github-releases'
   storageBackend: process.env.STORAGE_BACKEND || 'local',
 
   // Local storage path
@@ -23,6 +23,18 @@ module.exports = {
     secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || '',
     // Set to true to force path-style URLs (needed for some S3-compatible stores)
     forcePathStyle: process.env.S3_FORCE_PATH_STYLE === 'true',
+    // 'legacy' keeps narinfo under narinfo/; 'nix' is the layout Nix's s3:// store reads
+    layout: process.env.S3_LAYOUT || 'legacy',
+  },
+
+  // Cloudflare R2 config (used by 'r2' storage backend; always the 'nix' layout)
+  r2: {
+    accountId: process.env.R2_ACCOUNT_ID || '',
+    bucket: process.env.R2_BUCKET || '',
+    accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
+    // Override for jurisdictional endpoints, e.g. https://<account>.eu.r2.cloudflarestorage.com
+    endpoint: process.env.R2_ENDPOINT || undefined,
   },
 
   // GitHub Releases config (used by 'github-releases' storage backend)
