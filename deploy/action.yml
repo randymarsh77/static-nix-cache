@@ -301,6 +301,9 @@ runs:
 
     - name: Upload server logs
       if: always()
+      # The log is a debugging aid. Failing to keep it, as when the repository is
+      # over its artifact storage quota, must not fail a publish that worked.
+      continue-on-error: true
       uses: actions/upload-artifact@v4
       with:
         name: static-nix-cache-deploy-log-${{ github.job }}-${{ strategy.job-index || 0 }}-${{ github.run_attempt }}
