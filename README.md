@@ -24,6 +24,11 @@ nix run github:randymarsh77/static-nix-cache#setup-github -- --repo OWNER/REPO
 See [repository provisioning](https://randymarsh77.github.io/static-nix-cache/docs/repository-setup) for authentication,
 existing sites, release tags, secure key backups, and workflow dispatch.
 
+For a private repository, whose release assets Nix cannot download, provision a
+private Cloudflare R2 cache instead with
+`nix run github:randymarsh77/static-nix-cache#setup-r2`; see
+[R2 provisioning](https://randymarsh77.github.io/static-nix-cache/docs/r2-setup).
+
 Add a workflow to your repository:
 
 These examples use `v1`, the floating major tag for the supported setup and

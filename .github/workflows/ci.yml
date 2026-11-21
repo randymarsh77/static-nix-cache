@@ -59,7 +59,9 @@ jobs:
         run: npx jest tests/setup-github-cache.test.js
 
       - name: Check provisioning CLI
-        run: nix run .#setup-github -- --help
+        run: |
+          nix run .#setup-github -- --help
+          nix run .#setup-r2 -- --help
 
       - run: nix flake check --no-build --accept-flake-config
       - run: nix build --accept-flake-config
