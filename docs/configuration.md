@@ -15,7 +15,7 @@ static-nix-cache is configured entirely through environment variables.
 | `PORT` | `8080` | HTTP port to listen on |
 | `STORE_DIR` | `/nix/store` | Nix store directory |
 | `CACHE_PRIORITY` | `30` | Cache priority (lower = higher priority) |
-| `STORAGE_BACKEND` | `local` | `local`, `s3`, or `github-releases` |
+| `STORAGE_BACKEND` | `local` | `local`, `s3`, `r2`, or `github-releases` |
 | `LOCAL_STORAGE_PATH` | `./cache` | Root directory for local storage |
 | `S3_BUCKET` | *(required for s3)* | S3 bucket name |
 | `S3_REGION` | `auto` | S3 region |
@@ -23,6 +23,12 @@ static-nix-cache is configured entirely through environment variables.
 | `S3_ACCESS_KEY_ID` | | S3 access key ID |
 | `S3_SECRET_ACCESS_KEY` | | S3 secret access key |
 | `S3_FORCE_PATH_STYLE` | `false` | Use path-style S3 URLs |
+| `S3_LAYOUT` | `legacy` | `legacy` (narinfo under `narinfo/`) or `nix` (the layout Nix's `s3://` store reads) |
+| `R2_ACCOUNT_ID` | *(required for r2)* | Cloudflare account ID |
+| `R2_BUCKET` | *(required for r2)* | R2 bucket name |
+| `R2_ACCESS_KEY_ID` | | R2 API token access key ID |
+| `R2_SECRET_ACCESS_KEY` | | R2 API token secret access key |
+| `R2_ENDPOINT` | `https://<account>.r2.cloudflarestorage.com` | Endpoint override (e.g. EU jurisdiction) |
 | `SIGNING_KEY` | *(disabled)* | Signing key `<keyname>:<base64-ed25519-private>` |
 | `UPLOAD_SECRET` | *(open)* | Bearer token required for PUT requests |
 | `GITHUB_TOKEN` | | GitHub token (`GITHUB_TOKEN` works for same-repository releases) |
