@@ -235,6 +235,7 @@ Exports new Nix store paths (including closures) as a workflow artifact. Auto-de
 | `signing-key` | no | | Nix signing key for signing exported binaries |
 | `snapshot-path` | no | `/tmp/static-nix-cache-setup/store-paths-before.txt` | Path to the store snapshot (from `setup`) |
 | `store-dir` | no | `/nix/store` | Path to the Nix store directory |
+| `skip-fixed-output` | no | `false` | Leave out downloaded paths nothing published depends on (see [Skipping downloads](#skipping-downloads)) |
 
 ### `deploy`
 
@@ -262,12 +263,43 @@ Pushes store paths to the configured backend and optionally generates a static s
 | `static` | no | | Output dir for static site generation |
 | `port` | no | `18734` | Temporary server port |
 | `compression` | no | `xz` | Compression for `nix copy` |
+| `skip-fixed-output` | no | `false` | Leave out downloaded paths nothing published depends on (see [Skipping downloads](#skipping-downloads)) |
 
 Deploy auto-detects store paths in this priority order:
 1. Explicit `paths-file` input
 2. Saved artifacts (auto-restored from `static-nix-cache-*` pattern)
 3. Setup snapshot (diffing current store against snapshot)
 4. magic-nix-cache daemon at default address (`127.0.0.1:37515`)
+
+## Skipping downloads
+
+Derivations that only download something, such as `fetchurl`, `fetchzip`,
+`fetchFromGitHub` or a prebuilt `-bin` package, take no time to rebuild, so
+they are not worth storing. Set `skip-fixed-output` on `save` or `deploy` to
+leave them out:
+
+```yaml
+- uses: randymarsh77/static-nix-cache/deploy@v1
+  with:
+    github-token: ${{ github.token }}
+    skip-fixed-output: true
+```
+
+A downloaded path is the output of a fixed-output derivation: Nix knows its hash
+in advance and records it as content-addressed. Those paths are taken off the
+list of paths to publish, and the log names each as `skipped (fixed-output):`.
+Flake inputs and other `-source` paths count as downloads too.
+
+A download that a published path depends on at run time, such as a binary a
+wrapper script calls, is still published. `nix copy` copies the whole closure of
+each path, and a client could not use the wrapper from the cache without it. Only
+downloads nothing published refers to are left out, such as source tarballs and
+tools in a dev shell. Clients download those again from their original location.
+
+If the outputs of [content-addressed derivations](https://nix.dev/manual/nix/latest/development/experimental-features#xp-feature-ca-derivations)
+are among your paths, they are left out too, because Nix records them the same
+way. `save` needs `node` on the runner for this option; GitHub-hosted runners
+have it.
 
 ## Private cache on Cloudflare R2
 
