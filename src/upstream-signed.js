@@ -89,6 +89,7 @@ function parsePathInfo(json, storeDir = '/nix/store') {
       narSize: info.narSize,
       references: (info.references || []).map(full),
       signatures: info.signatures || [],
+      ca: info.ca || null,
     });
   }
   return infos;

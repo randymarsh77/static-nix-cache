@@ -60,6 +60,10 @@ inputs:
     description: 'Whitespace-separated public keys of the upstream caches (keyname:base64). A store path one of them signed is skipped without a request to any cache. The key of https://cache.nixos.org is known and need not be given.'
     required: false
     default: ''
+  skip-fixed-output:
+    description: 'Leave out store paths that were downloaded rather than built: the outputs of fixed-output derivations such as fetchurl. A download that a published path depends on is still published with it, as part of its closure.'
+    required: false
+    default: 'false'
   signing-key:
     description: 'Nix signing key (keyname:base64-ed25519-private)'
     required: false
@@ -270,6 +274,7 @@ runs:
         COMPRESSION: ${{ inputs.compression }}
         UPSTREAM_CACHES: ${{ inputs.upstream-caches }}
         UPSTREAM_PUBLIC_KEYS: ${{ inputs.upstream-public-keys }}
+        SKIP_FIXED_OUTPUT: ${{ inputs.skip-fixed-output }}
         STATIC_NIX_CACHE_DIR: ${{ steps.install.outputs.static-nix-cache-dir }}
       run: |
         set -euo pipefail
@@ -279,6 +284,16 @@ runs:
         if [ -n "$EXPORT_DIR" ] && [ -d "$EXPORT_DIR" ]; then
           copy_args+=(--from "file://$EXPORT_DIR")
           echo "Copying from exported binary cache: $EXPORT_DIR"
+        fi
+
+        # A path that was downloaded rather than built need not be published on its own;
+        # nix copy still brings it along with any published path that depends on it.
+        if [ "$SKIP_FIXED_OUTPUT" = "true" ]; then
+          if [ "${#copy_args[@]}" -gt 0 ]; then
+            NIX_STORE_URL="file://$EXPORT_DIR" node "$STATIC_NIX_CACHE_DIR/scripts/skip-fixed-output.js" "$PATHS_FILE"
+          else
+            node "$STATIC_NIX_CACHE_DIR/scripts/skip-fixed-output.js" "$PATHS_FILE"
+          fi
         fi
 
         # A path an upstream cache signed came from that cache: skip it here, from what the

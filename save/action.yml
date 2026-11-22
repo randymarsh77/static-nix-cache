@@ -17,6 +17,10 @@ inputs:
     description: 'Path to the Nix store directory (used for auto-detection)'
     required: false
     default: '/nix/store'
+  skip-fixed-output:
+    description: 'Leave out store paths that were downloaded rather than built: the outputs of fixed-output derivations such as fetchurl. A download that a published path depends on is still published with it, as part of its closure.'
+    required: false
+    default: 'false'
 
 runs:
   using: composite
@@ -28,6 +32,8 @@ runs:
         ARTIFACT_NAME: ${{ inputs.name }}
         SNAPSHOT_PATH: ${{ inputs.snapshot-path }}
         STORE_DIR: ${{ inputs.store-dir }}
+        SKIP_FIXED_OUTPUT: ${{ inputs.skip-fixed-output }}
+        ACTION_DIR: ${{ github.action_path }}
       run: |
         set -euo pipefail
         EXPORT_DIR="/tmp/static-nix-cache-save/${ARTIFACT_NAME}"
@@ -61,6 +67,10 @@ runs:
             echo "::error::Either 'paths' input, a store snapshot from the setup action, or MAGIC_NIX_CACHE_DAEMONDIR is required"
             exit 1
           fi
+        fi
+
+        if [ "$SKIP_FIXED_OUTPUT" = "true" ]; then
+          node "$ACTION_DIR/../scripts/skip-fixed-output.js" "$EXPORT_DIR/store-paths.txt"
         fi
 
         count=$(wc -l < "$EXPORT_DIR/store-paths.txt")
