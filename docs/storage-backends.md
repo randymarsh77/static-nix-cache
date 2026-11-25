@@ -98,6 +98,9 @@ aws_secret_access_key = <read-only secret>
 
 Keep that file readable only by root (`chmod 600`).
 
+
+The `prune` action deletes what no recent publish needs; see [Pruning](r2-setup.md#pruning).
+
 ## Local Filesystem
 
 The `local` backend stores NAR and narinfo files on the local filesystem.
