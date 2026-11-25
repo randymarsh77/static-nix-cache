@@ -313,7 +313,10 @@ leave them out:
 A downloaded path is the output of a fixed-output derivation: Nix knows its hash
 in advance and records it as content-addressed. Those paths are taken off the
 list of paths to publish, and the log names each as `skipped (fixed-output):`.
-Flake inputs and other `-source` paths count as downloads too.
+Flake inputs and other `-source` paths count as downloads too. They are known
+even when the store lost their content address, as it does for a path it got
+from a binary cache whose narinfo has no `CA:` line, because Nix names such a
+path after its NAR hash and that name is checked.
 
 A download that a published path depends on at run time, such as a binary a
 wrapper script calls, is still published. `nix copy` copies the whole closure of
