@@ -237,6 +237,9 @@ Exports new Nix store paths (including closures) as a workflow artifact. Auto-de
 | `store-dir` | no | `/nix/store` | Path to the Nix store directory |
 | `skip-fixed-output` | no | `false` | Leave out downloaded paths nothing published depends on (see [Skipping downloads](#skipping-downloads)) |
 | `skip-local-only` | no | `false` | Leave out paths built with `allowSubstitutes = false`, and what depends on them (see [Skipping local builds](#skipping-local-builds)) |
+| `scan-secrets` | no | `false` | Fail before anything is uploaded if what would be holds a secret (see [Scanning for secrets](#scanning-for-secrets)) |
+| `secret-patterns` | no | | More regular expressions for `scan-secrets`, one per line |
+| `secret-allow` | no | | Files `scan-secrets` may match in, one glob per line |
 
 ### `deploy`
 
@@ -266,6 +269,9 @@ Pushes store paths to the configured backend and optionally generates a static s
 | `compression` | no | `xz` | Compression for `nix copy` |
 | `skip-fixed-output` | no | `false` | Leave out downloaded paths nothing published depends on (see [Skipping downloads](#skipping-downloads)) |
 | `skip-local-only` | no | `false` | Leave out paths built with `allowSubstitutes = false`, and what depends on them (see [Skipping local builds](#skipping-local-builds)) |
+| `scan-secrets` | no | `false` | Fail before anything is uploaded if what would be holds a secret (see [Scanning for secrets](#scanning-for-secrets)) |
+| `secret-patterns` | no | | More regular expressions for `scan-secrets`, one per line |
+| `secret-allow` | no | | Files `scan-secrets` may match in, one glob per line |
 | `record-root` | no | `false` | Record a root for `prune` (`r2` only; see [Pruning an R2 cache](r2-setup.md#pruning)) |
 | `root-paths` | no | *the paths found* | Store paths, or links such as `./result`, whose closures the root keeps |
 | `root-name` | no | *repository, workflow, job and matrix index* | Name of the root; the newest few of each name are always kept |
@@ -357,6 +363,46 @@ records none. In `deploy` with `export-dir`, it is skipped with a warning.
 
 With `record-root`, the paths left out are left out of the root too, so that
 copies the cache holds from before are pruned.
+
+## Scanning for secrets
+
+A cache serves what it holds to anyone who can read it, and a path once fetched cannot be
+taken back. A build that bakes a credential into its output, such as a token written into a
+config file or a key copied in from the build machine, would publish it. Set `scan-secrets` on
+`save` or `deploy` to stop that:
+
+```yaml
+- uses: randymarsh77/static-nix-cache/deploy@v1
+  with:
+    github-token: ${{ github.token }}
+    scan-secrets: true
+```
+
+It reads every file of what publishing uploads: the closure of the paths to publish, after the
+skip options, except paths an upstream cache signed (cache.nixos.org's, for `save`). Files over
+8 MiB, and symlinks, are not read. Binaries are read as well as text. It looks only for what is
+almost certainly a live secret:
+
+- 1Password service account tokens, AWS access key IDs and secret keys, GitHub and Slack tokens
+- Private keys with their body, not a parser's header string
+- Nix signing keys (`name:` and 64 bytes of base64, where a public key has 32)
+
+On a match the step fails and nothing is uploaded. The log names the rule, the store path, the
+file and the byte offset, never what matched. If the scan itself fails, nothing is uploaded
+either.
+
+Add your own formats with `secret-patterns`, one regular expression per line. If a match is
+not a secret, such as a test key a package ships, allow it with `secret-allow`: globs over
+`<name>/<file>`, where `<name>` is the store path name without its hash. A glob with no `/`
+allows a whole store path.
+
+```yaml
+    secret-allow: |
+      python3.13-cryptography-*/lib/**/tests/**
+```
+
+In `deploy` with `export-dir`, the paths are not in the local store, so set `scan-secrets` on
+the `save` that exported them.
 
 ## Private cache on Cloudflare R2
 
