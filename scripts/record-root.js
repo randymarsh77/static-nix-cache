@@ -10,6 +10,11 @@
 // (the newest few of each name are always kept); ROOT_ID tells roots of one name apart.
 // NIX_STORE_URL, when set, is the store to read closures from instead of the local one. The
 // storage is configured as for the server (STORAGE_BACKEND=r2, R2_BUCKET, ...).
+//
+// With SKIP_LOCAL_ONLY=true, local-only paths and what depends on them are left out of the
+// root, as they are left out of what is published: a cache that still holds copies of them
+// from before then has them collected. Only the local store can tell, so with NIX_STORE_URL
+// they stay in.
 
 const fs = require('fs');
 const path = require('path');
@@ -17,6 +22,7 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 const config = require('../src/config');
 const { bucketStorage, writeRoot } = require('../src/gc-storage');
+const { scanLocalOnly } = require('../src/local-only-scan');
 
 const run = promisify(execFile);
 const BATCH = 200;
@@ -46,10 +52,22 @@ async function main() {
     const { stdout } = await run(nix, args, { maxBuffer: 1024 * 1024 * 1024 });
     for (const p of stdout.split('\n').filter(Boolean)) closure.add(p.trim());
   }
+  let rooted = [...closure];
+  let left = '';
+  if (process.env.SKIP_LOCAL_ONLY === 'true' && !store) {
+    try {
+      const { heldClosure } = await scanLocalOnly(rooted, { nix, log: console.log });
+      rooted = rooted.filter(p => !heldClosure.has(p));
+      left = `; ${heldClosure.size} local-only path(s) and their dependents left out`;
+    } catch (err) {
+      // A root that names more keeps more, which is never wrong.
+      console.log(`::warning::Could not tell which paths are local-only, so the root names them all. ${String(err.message).split('\n')[0]}`);
+    }
+  }
   const { key, count } = await writeRoot(bucketStorage(config), {
-    name, id: process.env.ROOT_ID || '', paths: [...closure],
+    name, id: process.env.ROOT_ID || '', paths: rooted,
   });
-  console.log(`Recorded root ${key}: ${count} store path(s), the closure of ${paths.length}`);
+  console.log(`Recorded root ${key}: ${count} store path(s), the closure of ${paths.length}${left}`);
 }
 
 main().catch(err => {

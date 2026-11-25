@@ -30,12 +30,19 @@ async function mapLimit(items, fn, limit = CONCURRENCY) {
   return out;
 }
 
+/** When the cache's roots began, as SINCE_KEY says, or null. */
+async function rootsSince(storage) {
+  return gc.parseSince(await storage.getText(gc.SINCE_KEY));
+}
+
 /** Writes a root: the base names of the store paths a publish needs. */
 async function writeRoot(storage, { name, id, paths, now = new Date() }) {
   const names = [...new Set(paths.map(p => String(p).split('/').pop()).filter(b => gc.storeHash(b)))].sort();
   if (!names.length) throw new Error('A root needs at least one store path');
   const key = gc.rootKey(name, now, id);
   await storage.putText(key, names.map(n => `${n}\n`).join(''));
+  // The first root starts the time roots cover.
+  if (!(await rootsSince(storage))) await storage.putText(gc.SINCE_KEY, `${now.toISOString()}\n`);
   return { key, count: names.length };
 }
 
@@ -63,12 +70,23 @@ async function prune(storage, { keepDays = 30, keepLast = 3, graceHours = 24, dr
   if (!roots.length) {
     throw new Error('The cache has no roots, so every path in it would be deleted. Record roots (record-roots on deploy) before pruning.');
   }
+  // Caches whose roots began before SINCE_KEY was kept: their oldest root says when.
+  let since = await rootsSince(storage);
+  if (!since) {
+    since = new Date(Math.min(...roots.map(r => r.lastModified.getTime())));
+    if (!dryRun) await storage.putText(gc.SINCE_KEY, `${since.toISOString()}\n`);
+  }
+  const { covered, from } = gc.rootsCover({ since, keepDays, now });
+  const dry = dryRun || !covered;
   const { kept, dropped } = gc.selectRoots(roots, { keepDays, keepLast, now });
   const live = new Set();
   for (const key of kept) {
     const text = await storage.getText(key);
     if (text === null) throw new Error(`Root ${key} could not be read; nothing is deleted`);
     for (const h of gc.parseRoot(text)) live.add(h);
+  }
+  if (!covered) {
+    log(`Roots were first recorded ${since.toISOString()}, so they do not yet cover the ${keepDays} day(s) kept: what older publishes used could still be wanted. Nothing is deleted until ${from.toISOString()}; until then, this is what would be.`);
   }
   log(`Keeping ${kept.length} root(s) naming ${live.size} store path(s); dropping ${dropped.length} root(s)`);
 
@@ -85,15 +103,15 @@ async function prune(storage, { keepDays = 30, keepLast = 3, graceHours = 24, dr
   const bytes = keys => keys.reduce((n, k) => n + (size.get(k) || 0), 0);
   const total = objects.reduce((n, o) => n + o.size, 0);
   log(`Bucket: ${objects.length} object(s), ${MB(total)}`);
-  log(`${dryRun ? 'Would delete' : 'Deleting'} ${plan.narinfos.length} narinfo(s) and ${plan.nars.length} NAR(s), ${MB(bytes(plan.nars))}; keeping ${plan.keptNarinfos.length} narinfo(s)`);
+  log(`${dry ? 'Would delete' : 'Deleting'} ${plan.narinfos.length} narinfo(s) and ${plan.nars.length} NAR(s), ${MB(bytes(plan.nars))}; keeping ${plan.keptNarinfos.length} narinfo(s)`);
   // Name what goes, by store path: the narinfos say.
   const named = await mapLimit(plan.narinfos, async k => {
     const text = await storage.getText(k).catch(() => null);
     const m = text && /^StorePath:\s*(\S+)/m.exec(text);
     return m ? m[1] : k;
   });
-  for (const p of named.sort()) log(`  ${dryRun ? 'would delete' : 'deleting'}: ${p}`);
-  if (dryRun) return { ...plan, roots: dropped, bytes: bytes(plan.nars) };
+  for (const p of named.sort()) log(`  ${dry ? 'would delete' : 'deleting'}: ${p}`);
+  if (dry) return { ...plan, roots: dropped, bytes: bytes(plan.nars), deleted: false, until: covered ? null : from };
 
   await storage.deleteObjects(plan.narinfos);
 
@@ -117,7 +135,7 @@ async function prune(storage, { keepDays = 30, keepLast = 3, graceHours = 24, dr
   await storage.deleteObjects(nars);
   await storage.deleteObjects(dropped);
   log(`Deleted ${plan.narinfos.length} narinfo(s), ${nars.length} NAR(s) (${MB(bytes(nars))}) and ${dropped.length} root(s)`);
-  return { ...plan, nars, roots: dropped, bytes: bytes(nars) };
+  return { ...plan, nars, roots: dropped, bytes: bytes(nars), deleted: true, until: null };
 }
 
-module.exports = { bucketStorage, writeRoot, prune, mapLimit };
+module.exports = { bucketStorage, writeRoot, rootsSince, prune, mapLimit };

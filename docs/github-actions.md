@@ -325,8 +325,9 @@ have it.
 Some derivations are quicker to build than to fetch: nixpkgs' trivial builders
 (`runCommandLocal`, `writeText`, `symlinkJoin`), and anything that only
 repackages a download, such as a macOS app unpacked from a `.dmg`. A derivation
-says so with `allowSubstitutes = false`, and Nix then never looks for its output
-in a cache. Set `skip-local-only` on `save` or `deploy` to leave those out:
+says so with `allowSubstitutes = false`, and Nix then does not look for its
+output in a cache (unless `always-allow-substitutes` is set, as Determinate Nix
+sets it; leaving such paths out of the cache makes them built either way). Set `skip-local-only` on `save` or `deploy` to leave those out:
 
 ```yaml
 - uses: randymarsh77/static-nix-cache/deploy@v1
@@ -349,8 +350,13 @@ pkg.overrideAttrs { allowSubstitutes = false; preferLocalBuild = true; }
 ```
 
 The derivations are read from the local store, so the option only works in the
-job that built the paths. In `deploy` with `export-dir`, it is skipped with a
-warning.
+job that evaluated the paths. Each path's derivation is found by asking the
+store which of its derivations produce it, not only by the deriver the path
+records: a path fetched from a cache whose narinfos leave the deriver out
+records none. In `deploy` with `export-dir`, it is skipped with a warning.
+
+With `record-root`, the paths left out are left out of the root too, so that
+copies the cache holds from before are pruned.
 
 ## Private cache on Cloudflare R2
 

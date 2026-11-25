@@ -354,6 +354,7 @@ runs:
         ROOT_PATHS: ${{ inputs.root-paths }}
         ROOT_NAME: ${{ inputs.root-name || format('{0}-{1}-{2}-{3}', github.repository, github.workflow, github.job, strategy.job-index || 0) }}
         ROOT_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        SKIP_LOCAL_ONLY: ${{ inputs.skip-local-only }}
         EXPORT_DIR: ${{ inputs.export-dir || steps.aggregate.outputs.export-dir }}
         STATIC_NIX_CACHE_DIR: ${{ steps.install.outputs.static-nix-cache-dir }}
       run: |

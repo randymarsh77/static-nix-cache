@@ -18,8 +18,11 @@ const DAY = 24 * 3600 * 1000;
 const NOW = new Date('2026-11-24T12:00:00Z');
 const ago = days => new Date(NOW.getTime() - days * DAY);
 
-/** An in-memory bucket that lists in pages of `page` and records deletions. */
-function fakeBucket({ page = 1000 } = {}) {
+/**
+ * An in-memory bucket that lists in pages of `page` and records deletions. Its roots began
+ * `since` (by default long enough ago to cover the time kept; null for none noted).
+ */
+function fakeBucket({ page = 1000, since = ago(100) } = {}) {
   const objects = new Map();
   const deleted = [];
   const notFound = () => Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey', $metadata: { httpStatusCode: 404 } });
@@ -55,6 +58,7 @@ function fakeBucket({ page = 1000 } = {}) {
   };
   const put = (key, body, lastModified) => objects.set(key, { body: Buffer.from(body), lastModified });
   const storage = new S3Storage({ bucket: 'b', client, layout: 'nix' });
+  if (since) put(gc.SINCE_KEY, `${since.toISOString()}\n`, since);
   return { storage, objects, deleted, put };
 }
 
@@ -119,7 +123,7 @@ describe('pruning a bucket', () => {
     expect(bucket.deleted.sort()).toEqual([`${B}.narinfo`, `nar/${B}.nar.xz`]);
     expect(result.bytes).toBe(100);
     expect([...bucket.objects.keys()].sort()).toEqual([
-      `${A}.narinfo`, `${C}.narinfo`, `nar/${A}.nar.xz`, `nar/${C}.nar.xz`, 'nix-cache-info', 'roots/sys/1.txt',
+      `${A}.narinfo`, `${C}.narinfo`, 'gc/roots-since.txt', `nar/${A}.nar.xz`, `nar/${C}.nar.xz`, 'nix-cache-info', 'roots/sys/1.txt',
     ]);
   });
 
@@ -189,13 +193,50 @@ describe('pruning a bucket', () => {
   });
 
   test('a root is written with the base names of its paths', async () => {
-    const bucket = fakeBucket();
+    const bucket = fakeBucket({ since: null });
     const { key, count } = await writeRoot(bucket.storage, {
       name: 'sys', id: '1', now: NOW, paths: [`/nix/store/${B}-b`, `/nix/store/${A}-a`, `/nix/store/${A}-a`, 'junk'],
     });
     expect(count).toBe(2);
     expect(bucket.objects.get(key).body.toString()).toBe(`${A}-a\n${B}-b\n`);
     await expect(writeRoot(bucket.storage, { name: 'sys', paths: [] })).rejects.toThrow();
+    // The first root notes when roots began; later ones leave that alone.
+    expect(bucket.objects.get(gc.SINCE_KEY).body.toString()).toBe(`${NOW.toISOString()}\n`);
+    await writeRoot(bucket.storage, { name: 'sys', id: '2', now: new Date(NOW.getTime() + DAY), paths: [`/nix/store/${A}-a`] });
+    expect(bucket.objects.get(gc.SINCE_KEY).body.toString()).toBe(`${NOW.toISOString()}\n`);
+  });
+
+  test('nothing is deleted until roots cover the time kept', async () => {
+    const bucket = fakeBucket({ since: ago(10) });
+    publish(bucket, A, 40); // used by a publish from before roots, which no root names
+    publish(bucket, B, 5);
+    bucket.put('roots/sys/1.txt', `${B}-pkg\n`, ago(5));
+    const lines = [];
+    const result = await prune(bucket.storage, { now: NOW, keepDays: 30, log: l => lines.push(l) });
+    expect(bucket.deleted).toEqual([]);
+    expect(result.deleted).toBe(false);
+    expect(result.until).toEqual(new Date(ago(10).getTime() + 30 * DAY));
+    expect(result.narinfos).toEqual([`${A}.narinfo`]);
+    expect(lines.join('\n')).toMatch(/do not yet cover the 30 day\(s\) kept/);
+    expect(lines).toContain(`  would delete: /nix/store/${A}-pkg`);
+
+    // Once they do, it goes.
+    await prune(bucket.storage, { now: new Date(ago(10).getTime() + 30 * DAY), keepDays: 30, log: () => {} });
+    expect(bucket.deleted).toEqual([`${A}.narinfo`, `nar/${A}.nar.xz`]);
+  });
+
+  test('a cache with roots but no note of when they began dates them from its oldest root', async () => {
+    const bucket = fakeBucket({ since: null });
+    publish(bucket, A, 40);
+    bucket.put('roots/sys/1.txt', `${B}-pkg\n`, ago(3));
+    bucket.put('roots/sys/2.txt', `${B}-pkg\n`, ago(1));
+    // A dry run notes nothing.
+    await prune(bucket.storage, { now: NOW, dryRun: true, log: () => {} });
+    expect(bucket.objects.has(gc.SINCE_KEY)).toBe(false);
+    const result = await prune(bucket.storage, { now: NOW, log: () => {} });
+    expect(result.until).toEqual(new Date(ago(3).getTime() + 30 * DAY));
+    expect(bucket.deleted).toEqual([]);
+    expect(bucket.objects.get(gc.SINCE_KEY).body.toString()).toBe(`${ago(3).toISOString()}\n`);
   });
 });
 
