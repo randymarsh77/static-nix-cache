@@ -68,6 +68,18 @@ inputs:
     description: 'Leave out store paths whose derivation sets allowSubstitutes = false, which are quicker to build where they are used than to fetch, and every path that depends on one, since it would bring them along. Reads the local store, so paths read from an export directory are not checked.'
     required: false
     default: 'false'
+  record-root:
+    description: 'Record a root for pruning (see the prune action): the closure of root-paths, as this store has it, written to roots/<root-name>/ in the bucket. r2 backend only.'
+    required: false
+    default: 'false'
+  root-paths:
+    description: 'Whitespace-separated store paths, or links to them such as ./result, whose closures the root keeps. Defaults to every store path this run found to publish, before any were skipped.'
+    required: false
+    default: ''
+  root-name:
+    description: 'Name of the root. The newest few roots of each name are kept however old they are, so give each thing you publish its own name. Defaults to <repository>-<workflow>-<job>-<matrix index>.'
+    required: false
+    default: ''
   signing-key:
     description: 'Nix signing key (keyname:base64-ed25519-private)'
     required: false
@@ -285,6 +297,9 @@ runs:
         set -euo pipefail
         PATHS_FILE="${{ steps.prepare.outputs.paths-file }}"
 
+        # The paths found, before any are skipped: what a root keeps by default.
+        cp "$PATHS_FILE" /tmp/static-nix-cache-found-paths.txt
+
         copy_args=()
         if [ -n "$EXPORT_DIR" ] && [ -d "$EXPORT_DIR" ]; then
           copy_args+=(--from "file://$EXPORT_DIR")
@@ -325,6 +340,33 @@ runs:
           echo "Checking: $p"
           nix copy "${copy_args[@]}" --to "http://localhost:${PORT}?compression=${COMPRESSION}" --no-check-sigs "$p"
         done < "$PATHS_FILE"
+
+    - name: Record cache root
+      if: inputs.record-root == 'true'
+      shell: bash
+      env:
+        STORAGE_BACKEND: ${{ inputs.backend }}
+        R2_ACCOUNT_ID: ${{ inputs.r2-account-id }}
+        R2_BUCKET: ${{ inputs.r2-bucket }}
+        R2_ACCESS_KEY_ID: ${{ inputs.r2-access-key-id }}
+        R2_SECRET_ACCESS_KEY: ${{ inputs.r2-secret-access-key }}
+        R2_ENDPOINT: ${{ inputs.r2-endpoint }}
+        ROOT_PATHS: ${{ inputs.root-paths }}
+        ROOT_NAME: ${{ inputs.root-name || format('{0}-{1}-{2}-{3}', github.repository, github.workflow, github.job, strategy.job-index || 0) }}
+        ROOT_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        EXPORT_DIR: ${{ inputs.export-dir || steps.aggregate.outputs.export-dir }}
+        STATIC_NIX_CACHE_DIR: ${{ steps.install.outputs.static-nix-cache-dir }}
+      run: |
+        set -euo pipefail
+        ROOTS_FILE=/tmp/static-nix-cache-found-paths.txt
+        if [ -n "$ROOT_PATHS" ]; then
+          ROOTS_FILE=/tmp/static-nix-cache-root-paths.txt
+          printf '%s\n' $ROOT_PATHS > "$ROOTS_FILE"
+        fi
+        if [ -n "$EXPORT_DIR" ] && [ -d "$EXPORT_DIR" ]; then
+          export NIX_STORE_URL="file://$EXPORT_DIR"
+        fi
+        node "$STATIC_NIX_CACHE_DIR/scripts/record-root.js" "$ROOTS_FILE"
 
     - name: Generate static site
       if: inputs.static != ''

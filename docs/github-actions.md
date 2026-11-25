@@ -266,12 +266,29 @@ Pushes store paths to the configured backend and optionally generates a static s
 | `compression` | no | `xz` | Compression for `nix copy` |
 | `skip-fixed-output` | no | `false` | Leave out downloaded paths nothing published depends on (see [Skipping downloads](#skipping-downloads)) |
 | `skip-local-only` | no | `false` | Leave out paths built with `allowSubstitutes = false`, and what depends on them (see [Skipping local builds](#skipping-local-builds)) |
+| `record-root` | no | `false` | Record a root for `prune` (`r2` only; see [Pruning an R2 cache](r2-setup.md#pruning)) |
+| `root-paths` | no | *the paths found* | Store paths, or links such as `./result`, whose closures the root keeps |
+| `root-name` | no | *repository, workflow, job and matrix index* | Name of the root; the newest few of each name are always kept |
 
 Deploy auto-detects store paths in this priority order:
 1. Explicit `paths-file` input
 2. Saved artifacts (auto-restored from `static-nix-cache-*` pattern)
 3. Setup snapshot (diffing current store against snapshot)
 4. magic-nix-cache daemon at default address (`127.0.0.1:37515`)
+
+### `prune`
+
+Deletes from an R2 cache every store path no recent root needs, as `nix-collect-garbage` does
+for a store. See [Pruning an R2 cache](r2-setup.md#pruning).
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `r2-account-id`, `r2-bucket`, `r2-access-key-id`, `r2-secret-access-key` | yes | | As for `deploy`; the token needs Object Read & Write |
+| `r2-endpoint` | no | *account endpoint* | Endpoint override |
+| `keep-days` | no | `30` | Keep every root written in this many days |
+| `keep-last` | no | `3` | Keep the newest this many roots of each name, however old |
+| `grace-hours` | no | `24` | Never delete anything written this recently |
+| `dry-run` | no | `false` | Only list what would be deleted |
 
 ## Skipping downloads
 

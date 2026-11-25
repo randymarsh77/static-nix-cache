@@ -100,6 +100,53 @@ aws_access_key_id = <reader access key id>
 aws_secret_access_key = <reader secret>
 ```
 
+## Pruning
+
+Nothing in a cache goes bad: a store path never changes. Paths only stop being used, when what
+was built from them is rebuilt with different inputs, and the bucket grows. The `prune` action
+deletes them, as `nix-collect-garbage` does for a store, by the same rule: whatever no root
+needs goes.
+
+A root is recorded by `deploy` with `record-root: true`. It lists the closure of what the run
+built, as the building store has it, under `roots/<name>/` in the bucket. That closure holds
+paths the cache got from earlier runs too, and paths it never holds, such as those
+cache.nixos.org serves or `skip-local-only` left out. By default a root holds the closure of
+every path the run found to publish; name the outputs you serve with `root-paths` instead
+(for example `./result`) when a run does not rebuild all of them.
+
+```yaml
+- uses: randymarsh77/static-nix-cache/deploy@v1
+  with:
+    backend: r2
+    # ...
+    record-root: true
+    root-paths: ./result
+    root-name: darwin-system
+
+- uses: randymarsh77/static-nix-cache/prune@v1
+  with:
+    r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+    r2-bucket: ${{ vars.R2_BUCKET }}
+    r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+    r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+```
+
+`prune` keeps every root written in the last `keep-days` days (30), and the newest `keep-last`
+(3) of each name however old, so a cache nobody has published to for a while still serves what
+was last published. It deletes every narinfo no kept root names, then every NAR no remaining
+narinfo points to, then the roots it no longer keeps. Anything written in the last
+`grace-hours` (24) stays, since a publish writes its root only after its paths.
+
+- **Every writer must record roots.** A path no root names is deleted, whoever wrote it. With
+  no roots at all, `prune` stops without deleting anything.
+- **Start with `dry-run: true`.** It lists, by store path, what would be deleted.
+- **Run it with your publishers' concurrency group**, so that it never runs during a publish.
+  If one does run meanwhile, a NAR a new narinfo points to is kept, but a path that publish
+  found already in the cache may be deleted under it. Machines then build that path, and a
+  later publish puts it back.
+- A path that was deleted and is needed again is built and published again, as any path the
+  cache lacks.
+
 ## Reruns and rotation
 
 Running the command again changes nothing: it reuses the bucket, the tokens and

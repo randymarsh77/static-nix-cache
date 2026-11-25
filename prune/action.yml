@@ -1,0 +1,64 @@
+name: 'static-nix-cache Prune'
+description: 'Delete from an R2 cache every store path no recent root needs: garbage collection for the cache'
+
+inputs:
+  r2-account-id:
+    description: 'Cloudflare account ID'
+    required: true
+  r2-bucket:
+    description: 'R2 bucket name'
+    required: true
+  r2-access-key-id:
+    description: 'R2 API token access key ID with Object Read & Write on the bucket'
+    required: true
+  r2-secret-access-key:
+    description: 'R2 API token secret access key'
+    required: true
+  r2-endpoint:
+    description: 'R2 S3 endpoint override, e.g. for an EU jurisdiction bucket (defaults to https://<account-id>.r2.cloudflarestorage.com)'
+    required: false
+  keep-days:
+    description: 'Keep every root written in this many days'
+    required: false
+    default: '30'
+  keep-last:
+    description: 'Keep the newest this many roots of each name, however old (at least 1)'
+    required: false
+    default: '3'
+  grace-hours:
+    description: 'Never delete an object written in this many hours, so that a publish that is running keeps what it wrote'
+    required: false
+    default: '24'
+  dry-run:
+    description: 'Only list what would be deleted'
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Install static-nix-cache
+      id: install
+      shell: bash
+      run: |
+        set -euo pipefail
+        STATIC_NIX_CACHE_DIR="${{ github.action_path }}/.."
+        cd "$STATIC_NIX_CACHE_DIR"
+        npm ci --ignore-scripts --silent
+        echo "static-nix-cache-dir=$(cd "$STATIC_NIX_CACHE_DIR" && pwd)" >> "$GITHUB_OUTPUT"
+
+    - name: Prune cache
+      shell: bash
+      env:
+        STORAGE_BACKEND: r2
+        R2_ACCOUNT_ID: ${{ inputs.r2-account-id }}
+        R2_BUCKET: ${{ inputs.r2-bucket }}
+        R2_ACCESS_KEY_ID: ${{ inputs.r2-access-key-id }}
+        R2_SECRET_ACCESS_KEY: ${{ inputs.r2-secret-access-key }}
+        R2_ENDPOINT: ${{ inputs.r2-endpoint }}
+        PRUNE_KEEP_DAYS: ${{ inputs.keep-days }}
+        PRUNE_KEEP_LAST: ${{ inputs.keep-last }}
+        PRUNE_GRACE_HOURS: ${{ inputs.grace-hours }}
+        PRUNE_DRY_RUN: ${{ inputs.dry-run }}
+        STATIC_NIX_CACHE_DIR: ${{ steps.install.outputs.static-nix-cache-dir }}
+      run: node "$STATIC_NIX_CACHE_DIR/scripts/prune.js"

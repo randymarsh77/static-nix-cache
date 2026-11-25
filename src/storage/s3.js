@@ -6,7 +6,9 @@ const os = require('os');
 const path = require('path');
 const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
-const { S3Client, GetObjectCommand, PutObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
+const {
+  S3Client, GetObjectCommand, PutObjectCommand, HeadObjectCommand, ListObjectsV2Command, DeleteObjectsCommand,
+} = require('@aws-sdk/client-s3');
 
 // A single PutObject is limited to 5 GiB by S3 and R2.
 const MAX_OBJECT_BYTES = 5 * 1024 * 1024 * 1024;
@@ -159,6 +161,61 @@ class S3Storage {
       }));
     } finally {
       await fsp.rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  /**
+   * Every object under a prefix (the whole bucket when it is empty).
+   * @returns {Promise<{key: string, lastModified: Date, size: number}[]>}
+   */
+  async listObjects(prefix = '') {
+    const out = [];
+    let token;
+    do {
+      const resp = await this.client.send(new ListObjectsV2Command({
+        Bucket: this.bucket,
+        ...(prefix ? { Prefix: prefix } : {}),
+        ...(token ? { ContinuationToken: token } : {}),
+      }));
+      for (const o of resp.Contents || []) {
+        out.push({ key: o.Key, lastModified: new Date(o.LastModified), size: o.Size || 0 });
+      }
+      token = resp.IsTruncated ? resp.NextContinuationToken : undefined;
+    } while (token);
+    return out;
+  }
+
+  /** An object's contents as text, or null when there is none. */
+  async getText(key) {
+    try {
+      const resp = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+      const chunks = [];
+      for await (const chunk of resp.Body) chunks.push(chunk);
+      return Buffer.concat(chunks).toString('utf8');
+    } catch (err) {
+      if (err.name === 'NoSuchKey' || err.$metadata?.httpStatusCode === 404) return null;
+      throw err;
+    }
+  }
+
+  async putText(key, content, contentType = 'text/plain') {
+    await this.client.send(new PutObjectCommand({
+      Bucket: this.bucket, Key: key, Body: content, ContentType: contentType,
+    }));
+  }
+
+  /** Deletes objects, 1000 to a request (the most S3 and R2 take). */
+  async deleteObjects(keys) {
+    for (let i = 0; i < keys.length; i += 1000) {
+      const batch = keys.slice(i, i + 1000);
+      const resp = await this.client.send(new DeleteObjectsCommand({
+        Bucket: this.bucket,
+        Delete: { Objects: batch.map(Key => ({ Key })), Quiet: true },
+      }));
+      const errors = resp.Errors || [];
+      if (errors.length) {
+        throw new Error(`Could not delete ${errors.length} object(s), such as ${errors[0].Key}: ${errors[0].Message || errors[0].Code}`);
+      }
     }
   }
 }
