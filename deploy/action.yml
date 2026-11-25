@@ -68,6 +68,18 @@ inputs:
     description: 'Leave out store paths whose derivation sets allowSubstitutes = false, which are quicker to build where they are used than to fetch, and every path that depends on one, since it would bring them along. Reads the local store, so paths read from an export directory are not checked.'
     required: false
     default: 'false'
+  scan-secrets:
+    description: 'Fail, before anything is uploaded, if a store path about to be published holds a secret: a token in a format a service issues (1Password, AWS, GitHub, Slack), a private key, or a Nix signing key. Scans the closure of what is published, except paths an upstream cache signed. Reads the local store; paths read from an export directory are not scanned here, so set it on save.'
+    required: false
+    default: 'false'
+  secret-patterns:
+    description: 'More regular expressions for scan-secrets, one per line'
+    required: false
+    default: ''
+  secret-allow:
+    description: 'Files scan-secrets may find a match in, one glob per line, over <name>/<file> where <name> is the store path name without its hash (for example python3.13-cryptography-*/lib/**/tests/**); a glob with no / allows a whole store path'
+    required: false
+    default: ''
   record-root:
     description: 'Record a root for pruning (see the prune action): the closure of root-paths, as this store has it, written to roots/<root-name>/ in the bucket. r2 backend only.'
     required: false
@@ -292,6 +304,9 @@ runs:
         UPSTREAM_PUBLIC_KEYS: ${{ inputs.upstream-public-keys }}
         SKIP_FIXED_OUTPUT: ${{ inputs.skip-fixed-output }}
         SKIP_LOCAL_ONLY: ${{ inputs.skip-local-only }}
+        SCAN_SECRETS: ${{ inputs.scan-secrets }}
+        SECRET_PATTERNS: ${{ inputs.secret-patterns }}
+        SECRET_ALLOW: ${{ inputs.secret-allow }}
         STATIC_NIX_CACHE_DIR: ${{ steps.install.outputs.static-nix-cache-dir }}
       run: |
         set -euo pipefail
@@ -331,6 +346,15 @@ runs:
         # directory are not in the local store, so those are all checked.
         if [ "${#copy_args[@]}" -eq 0 ]; then
           node "$STATIC_NIX_CACHE_DIR/scripts/skip-upstream-signed.js" "$PATHS_FILE"
+        fi
+
+        # Nothing is uploaded if what would be holds a secret. Fails the step when it does.
+        if [ "$SCAN_SECRETS" = "true" ]; then
+          if [ "${#copy_args[@]}" -gt 0 ]; then
+            echo "::warning::scan-secrets reads the local store; paths from an export directory are scanned by save, when it has scan-secrets."
+          else
+            node "$STATIC_NIX_CACHE_DIR/scripts/scan-secrets.js" "$PATHS_FILE"
+          fi
         fi
 
         # Each path is offered to the cache, which takes only what it and its upstream

@@ -26,6 +26,19 @@ inputs:
     required: false
     default: 'false'
 
+  scan-secrets:
+    description: 'Fail, before anything is uploaded, if a store path about to be published holds a secret: a token in a format a service issues (1Password, AWS, GitHub, Slack), a private key, or a Nix signing key. Scans the closure of what is published, except paths an upstream cache signed. Reads the local store. Paths cache.nixos.org signed are not scanned.'
+    required: false
+    default: 'false'
+  secret-patterns:
+    description: 'More regular expressions for scan-secrets, one per line'
+    required: false
+    default: ''
+  secret-allow:
+    description: 'Files scan-secrets may find a match in, one glob per line, over <name>/<file> where <name> is the store path name without its hash (for example python3.13-cryptography-*/lib/**/tests/**); a glob with no / allows a whole store path'
+    required: false
+    default: ''
+
 runs:
   using: composite
   steps:
@@ -38,6 +51,9 @@ runs:
         STORE_DIR: ${{ inputs.store-dir }}
         SKIP_FIXED_OUTPUT: ${{ inputs.skip-fixed-output }}
         SKIP_LOCAL_ONLY: ${{ inputs.skip-local-only }}
+        SCAN_SECRETS: ${{ inputs.scan-secrets }}
+        SECRET_PATTERNS: ${{ inputs.secret-patterns }}
+        SECRET_ALLOW: ${{ inputs.secret-allow }}
         ACTION_DIR: ${{ github.action_path }}
       run: |
         set -euo pipefail
@@ -79,6 +95,11 @@ runs:
         fi
         if [ "$SKIP_LOCAL_ONLY" = "true" ]; then
           node "$ACTION_DIR/../scripts/skip-local-only.js" "$EXPORT_DIR/store-paths.txt"
+        fi
+
+        # Nothing is exported if what would be holds a secret. Fails the step when it does.
+        if [ "$SCAN_SECRETS" = "true" ]; then
+          UPSTREAM_CACHES=https://cache.nixos.org node "$ACTION_DIR/../scripts/scan-secrets.js" "$EXPORT_DIR/store-paths.txt"
         fi
 
         count=$(wc -l < "$EXPORT_DIR/store-paths.txt")
