@@ -236,6 +236,7 @@ Exports new Nix store paths (including closures) as a workflow artifact. Auto-de
 | `snapshot-path` | no | `/tmp/static-nix-cache-setup/store-paths-before.txt` | Path to the store snapshot (from `setup`) |
 | `store-dir` | no | `/nix/store` | Path to the Nix store directory |
 | `skip-fixed-output` | no | `false` | Leave out downloaded paths nothing published depends on (see [Skipping downloads](#skipping-downloads)) |
+| `skip-local-only` | no | `false` | Leave out paths built with `allowSubstitutes = false`, and what depends on them (see [Skipping local builds](#skipping-local-builds)) |
 
 ### `deploy`
 
@@ -264,6 +265,7 @@ Pushes store paths to the configured backend and optionally generates a static s
 | `port` | no | `18734` | Temporary server port |
 | `compression` | no | `xz` | Compression for `nix copy` |
 | `skip-fixed-output` | no | `false` | Leave out downloaded paths nothing published depends on (see [Skipping downloads](#skipping-downloads)) |
+| `skip-local-only` | no | `false` | Leave out paths built with `allowSubstitutes = false`, and what depends on them (see [Skipping local builds](#skipping-local-builds)) |
 
 Deploy auto-detects store paths in this priority order:
 1. Explicit `paths-file` input
@@ -300,6 +302,38 @@ If the outputs of [content-addressed derivations](https://nix.dev/manual/nix/lat
 are among your paths, they are left out too, because Nix records them the same
 way. `save` needs `node` on the runner for this option; GitHub-hosted runners
 have it.
+
+## Skipping local builds
+
+Some derivations are quicker to build than to fetch: nixpkgs' trivial builders
+(`runCommandLocal`, `writeText`, `symlinkJoin`), and anything that only
+repackages a download, such as a macOS app unpacked from a `.dmg`. A derivation
+says so with `allowSubstitutes = false`, and Nix then never looks for its output
+in a cache. Set `skip-local-only` on `save` or `deploy` to leave those out:
+
+```yaml
+- uses: randymarsh77/static-nix-cache/deploy@v1
+  with:
+    github-token: ${{ github.token }}
+    skip-fixed-output: true
+    skip-local-only: true
+```
+
+Every path that depends on one is left out too, because `nix copy` would bring
+it along. That includes the top-level path of a system configuration, which
+holds its apps; a client builds it, and still fetches everything else it needs
+from the cache. The log names each path left out as `skipped (local-only):` or
+`skipped (depends on a local-only path):`.
+
+To mark a package of your own, or one from nixpkgs:
+
+```nix
+pkg.overrideAttrs { allowSubstitutes = false; preferLocalBuild = true; }
+```
+
+The derivations are read from the local store, so the option only works in the
+job that built the paths. In `deploy` with `export-dir`, it is skipped with a
+warning.
 
 ## Private cache on Cloudflare R2
 

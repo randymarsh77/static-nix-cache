@@ -64,6 +64,10 @@ inputs:
     description: 'Leave out store paths that were downloaded rather than built: the outputs of fixed-output derivations such as fetchurl. A download that a published path depends on is still published with it, as part of its closure.'
     required: false
     default: 'false'
+  skip-local-only:
+    description: 'Leave out store paths whose derivation sets allowSubstitutes = false, which are quicker to build where they are used than to fetch, and every path that depends on one, since it would bring them along. Reads the local store, so paths read from an export directory are not checked.'
+    required: false
+    default: 'false'
   signing-key:
     description: 'Nix signing key (keyname:base64-ed25519-private)'
     required: false
@@ -275,6 +279,7 @@ runs:
         UPSTREAM_CACHES: ${{ inputs.upstream-caches }}
         UPSTREAM_PUBLIC_KEYS: ${{ inputs.upstream-public-keys }}
         SKIP_FIXED_OUTPUT: ${{ inputs.skip-fixed-output }}
+        SKIP_LOCAL_ONLY: ${{ inputs.skip-local-only }}
         STATIC_NIX_CACHE_DIR: ${{ steps.install.outputs.static-nix-cache-dir }}
       run: |
         set -euo pipefail
@@ -293,6 +298,16 @@ runs:
             NIX_STORE_URL="file://$EXPORT_DIR" node "$STATIC_NIX_CACHE_DIR/scripts/skip-fixed-output.js" "$PATHS_FILE"
           else
             node "$STATIC_NIX_CACHE_DIR/scripts/skip-fixed-output.js" "$PATHS_FILE"
+          fi
+        fi
+
+        # A path that is quicker to build than to fetch is left out, with whatever depends on it
+        # and would bring it along. Only the local store has the derivations to tell.
+        if [ "$SKIP_LOCAL_ONLY" = "true" ]; then
+          if [ "${#copy_args[@]}" -gt 0 ]; then
+            echo "::warning::skip-local-only reads the local store; paths from an export directory are not checked."
+          else
+            node "$STATIC_NIX_CACHE_DIR/scripts/skip-local-only.js" "$PATHS_FILE"
           fi
         fi
 

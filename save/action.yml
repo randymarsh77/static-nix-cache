@@ -21,6 +21,10 @@ inputs:
     description: 'Leave out store paths that were downloaded rather than built: the outputs of fixed-output derivations such as fetchurl. A download that a published path depends on is still published with it, as part of its closure.'
     required: false
     default: 'false'
+  skip-local-only:
+    description: 'Leave out store paths whose derivation sets allowSubstitutes = false, which are quicker to build where they are used than to fetch, and every path that depends on one, since it would bring them along. Reads the local store, so paths read from an export directory are not checked.'
+    required: false
+    default: 'false'
 
 runs:
   using: composite
@@ -33,6 +37,7 @@ runs:
         SNAPSHOT_PATH: ${{ inputs.snapshot-path }}
         STORE_DIR: ${{ inputs.store-dir }}
         SKIP_FIXED_OUTPUT: ${{ inputs.skip-fixed-output }}
+        SKIP_LOCAL_ONLY: ${{ inputs.skip-local-only }}
         ACTION_DIR: ${{ github.action_path }}
       run: |
         set -euo pipefail
@@ -71,6 +76,9 @@ runs:
 
         if [ "$SKIP_FIXED_OUTPUT" = "true" ]; then
           node "$ACTION_DIR/../scripts/skip-fixed-output.js" "$EXPORT_DIR/store-paths.txt"
+        fi
+        if [ "$SKIP_LOCAL_ONLY" = "true" ]; then
+          node "$ACTION_DIR/../scripts/skip-local-only.js" "$EXPORT_DIR/store-paths.txt"
         fi
 
         count=$(wc -l < "$EXPORT_DIR/store-paths.txt")
