@@ -110,7 +110,8 @@ needs goes.
 A root is recorded by `deploy` with `record-root: true`. It lists the closure of what the run
 built, as the building store has it, under `roots/<name>/` in the bucket. That closure holds
 paths the cache got from earlier runs too, and paths it never holds, such as those
-cache.nixos.org serves or `skip-local-only` left out. By default a root holds the closure of
+cache.nixos.org serves. Paths `skip-local-only` leaves out are left out of the root as well,
+so that copies from before are pruned. By default a root holds the closure of
 every path the run found to publish; name the outputs you serve with `root-paths` instead
 (for example `./result`) when a run does not rebuild all of them.
 
@@ -133,10 +134,16 @@ every path the run found to publish; name the outputs you serve with `root-paths
 
 `prune` keeps every root written in the last `keep-days` days (30), and the newest `keep-last`
 (3) of each name however old, so a cache nobody has published to for a while still serves what
-was last published. It deletes every narinfo no kept root names, then every NAR no remaining
+was last published. A path therefore stays while any publish of the last 30 days used it, and
+while any of the last three publishes of each root name did. It deletes every narinfo no kept root names, then every NAR no remaining
 narinfo points to, then the roots it no longer keeps. Anything written in the last
 `grace-hours` (24) stays, since a publish writes its root only after its paths.
 
+- **Nothing is deleted until roots cover `keep-days`.** Roots only speak for publishes that
+  recorded one, and a machine that has not updated since an older publish may still want what
+  it used. The first root notes when roots began (`gc/roots-since.txt`); until `keep-days`
+  have passed since, `prune` only lists what it would delete, and says when it will start. A
+  cache that recorded roots before this note was kept dates them from its oldest root.
 - **Every writer must record roots.** A path no root names is deleted, whoever wrote it. With
   no roots at all, `prune` stops without deleting anything.
 - **Start with `dry-run: true`.** It lists, by store path, what would be deleted.

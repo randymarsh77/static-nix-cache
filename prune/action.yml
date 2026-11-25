@@ -18,7 +18,7 @@ inputs:
     description: 'R2 S3 endpoint override, e.g. for an EU jurisdiction bucket (defaults to https://<account-id>.r2.cloudflarestorage.com)'
     required: false
   keep-days:
-    description: 'Keep every root written in this many days'
+    description: 'Keep every root written in this many days. Nothing is deleted until roots have been recorded for this long'
     required: false
     default: '30'
   keep-last:

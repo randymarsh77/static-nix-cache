@@ -75,7 +75,9 @@ describe('what is held back', () => {
 
 describe('the script save and deploy run', () => {
   const script = path.resolve(__dirname, '../scripts/skip-local-only.js');
-  function runScript(paths, { broken = false } = {}) {
+  // `recorded: false`: paths record no deriver, as when fetched from a cache whose narinfos
+  // leave it out; the store still knows which of its derivations produce them.
+  function runScript(paths, { broken = false, recorded = true } = {}) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skip-local-'));
     const file = path.join(dir, 'paths.txt');
     const infoJson = path.join(dir, 'info.json');
@@ -84,7 +86,7 @@ describe('the script save and deploy run', () => {
     const bin = path.join(dir, 'nix');
     // The derivations "exist" as files under dir, so that the script can tell which are present.
     const local = p => path.join(dir, path.basename(drvOf(p)));
-    const withLocalDrvs = Object.fromEntries(Object.entries(closure).map(([p, i]) => [p, { ...i, deriver: local(p) }]));
+    const withLocalDrvs = Object.fromEntries(Object.entries(closure).map(([p, i]) => [p, { ...i, deriver: recorded ? local(p) : null }]));
     for (const p of [SYSTEM, APPS, APP, TOOL]) fs.writeFileSync(local(p), '');
     const drvs = {};
     for (const p of [SYSTEM, APPS, APP, TOOL]) {
@@ -95,6 +97,12 @@ describe('the script save and deploy run', () => {
     fs.writeFileSync(bin, broken
       ? '#!/bin/sh\necho broken >&2; exit 1\n'
       : `#!/bin/sh\ncase "$1" in\n  path-info) cat "${infoJson}" ;;\n  derivation) shift 2; echo "$@" > "${drvList}"; cat "${drvJson}" ;;\nesac\n`,
+    { mode: 0o755 });
+    // nix-store beside nix: the derivations in the store that produce each path asked about.
+    const present = [SYSTEM, APPS, APP, TOOL];
+    fs.writeFileSync(path.join(dir, 'nix-store'), broken
+      ? '#!/bin/sh\nexit 1\n'
+      : `#!/bin/sh\nshift 2\nfor p in "$@"; do case "$p" in\n${present.map(p => `  ${p}) echo "${local(p)}" ;;`).join('\n')}\nesac; done\n`,
     { mode: 0o755 });
     fs.writeFileSync(file, paths.map(p => `${p}\n`).join(''));
     const out = execFileSync(process.execPath, [script, file], {
@@ -116,6 +124,12 @@ describe('the script save and deploy run', () => {
     expect(out).toContain('Skipped 3 local-only store path(s) and their dependents; 1 left');
     // LIB's derivation is not in the store (it came from a cache), so it is not asked about.
     expect(asked).toHaveLength(4);
+  });
+
+  test('finds the derivation of a path that records none', () => {
+    const { out, left } = runScript([SYSTEM, APPS, APP, TOOL], { recorded: false });
+    expect(left).toEqual([TOOL]);
+    expect(out).toContain(`skipped (local-only): ${APP}`);
   });
 
   test('when Nix cannot be asked, every path stays', () => {

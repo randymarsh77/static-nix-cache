@@ -16,8 +16,15 @@
 //
 // Anything written within a grace period is kept whatever the roots say: a publish writes its
 // root only after its paths, so a path being published has no root yet.
+//
+// Roots only speak for publishes that recorded one. Until a cache has recorded roots for as
+// long as it keeps them, what older publishes used, which no root names, could still be
+// wanted, by a machine that has not updated since. So nothing is deleted until roots cover
+// the whole time kept: the cache notes when its first root was written (SINCE_KEY).
 
 const ROOTS_PREFIX = 'roots/';
+const SINCE_KEY = 'gc/roots-since.txt';
+const DAY_MS = 24 * 3600 * 1000;
 const HASH = /^[0-9a-df-np-sv-z]{32}$/;
 
 /** The hash part of a store path, or of a store path's base name, or null. */
@@ -57,7 +64,7 @@ function rootKey(name, now = new Date(), id = '') {
  * @returns {{kept: string[], dropped: string[]}}
  */
 function selectRoots(roots, { keepDays, keepLast, now = new Date() }) {
-  const cutoff = now.getTime() - keepDays * 24 * 3600 * 1000;
+  const cutoff = now.getTime() - keepDays * DAY_MS;
   const byName = new Map();
   for (const r of roots) {
     const name = r.key.slice(ROOTS_PREFIX.length).split('/')[0];
@@ -71,6 +78,22 @@ function selectRoots(roots, { keepDays, keepLast, now = new Date() }) {
     list.forEach((r, i) => (i < keepLast || r.lastModified.getTime() >= cutoff ? kept : dropped).push(r.key));
   }
   return { kept, dropped };
+}
+
+/**
+ * Whether roots cover the time kept: they must have been recorded since at least `keepDays`
+ * ago. `from` is when they do.
+ */
+function rootsCover({ since, keepDays, now = new Date() }) {
+  const from = new Date(since.getTime() + keepDays * DAY_MS);
+  return { covered: now.getTime() >= from.getTime(), from };
+}
+
+/** The time a SINCE_KEY object holds, or null. */
+function parseSince(text) {
+  if (text === null || text === undefined) return null;
+  const d = new Date(String(text).trim());
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 /** The NAR a narinfo points to, as its key in the bucket (nar/<file>), or null. */
@@ -118,5 +141,5 @@ function planSweep({ objects, layout, live, narOf, graceMs, now = new Date() }) 
 }
 
 module.exports = {
-  ROOTS_PREFIX, storeHash, parseRoot, rootName, rootKey, selectRoots, narKey, narinfoHash, planSweep,
+  ROOTS_PREFIX, SINCE_KEY, rootsCover, parseSince, storeHash, parseRoot, rootName, rootKey, selectRoots, narKey, narinfoHash, planSweep,
 };
