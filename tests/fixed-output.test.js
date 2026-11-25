@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { isFixedOutput, partitionFixedOutput, parsePathInfo } = require('../src/fixed-output');
+const { isFixedOutput, isNarAddressed, partitionFixedOutput, parsePathInfo } = require('../src/fixed-output');
 
 // As `nix path-info --json` reports them: a fetchurl download, a flake source, a file from
 // builtins.toFile and a built package.
@@ -33,6 +33,26 @@ describe('what counts as downloaded', () => {
     expect(isFixedOutput(undefined)).toBe(false);
     expect(isFixedOutput('text:sha256:abc')).toBe(false);
     expect(isFixedOutput({ method: 'text', hash: 'sha256-abc' })).toBe(false);
+  });
+
+  test('a flake source that lost its ca is known by its name in the store', () => {
+    // Nix's own source, as a store that got it from a binary cache without a CA line has it.
+    const nixSource = {
+      storePath: '/nix/store/04n19whd1y6w2dk5pr3m99dhyfy4j8pw-source',
+      narHash: 'sha256-mZiNGyjdUVlfEvllLQKVK0ZbkxWIAC42jjERazi+lfU=',
+      narSize: 10617656,
+      references: [],
+      signatures: [],
+      ca: null,
+    };
+    const [info] = parsePathInfo({ [nixSource.storePath]: nixSource }).values();
+    expect(isNarAddressed(info)).toBe(true);
+    expect(partitionFixedOutput([nixSource.storePath], parsePathInfo({ [nixSource.storePath]: nixSource })).fixed).toEqual([nixSource.storePath]);
+    // The same contents under another name, or with another hash, are not.
+    expect(isNarAddressed({ ...info, storePath: '/nix/store/04n19whd1y6w2dk5pr3m99dhyfy4j8pw-other' })).toBe(false);
+    expect(isNarAddressed({ ...info, storePath: BUILT })).toBe(false);
+    expect(isNarAddressed({ ...info, references: [BUILT] })).toBe(false);
+    expect(isNarAddressed({ ...info, narHash: null })).toBe(false);
   });
 
   test('downloads are split off; built, text and unknown paths are kept', () => {
